@@ -13,13 +13,14 @@ import time
 
 from ..config import Criteria
 from ..models import RawListing
-from .base import Source, http_session
+from .base import Source, http_session, _noop
 
 BASE = "https://liv.rent"
 CITY_URL = f"{BASE}/rental-listings/city/vancouver"
 DETAIL_RE = re.compile(r'href="(/rental-listings/detail/[^"]+)"')
 MAX_PAGES = 5
-DETAIL_DELAY_S = 0.7
+DETAIL_DELAY_S = 0.25  # liv.rent isn't rate-limited aggressively; keep it brisk
+MAX_DETAILS = 120      # safety cap so a huge result set can't blow the run's time budget
 
 
 def _field(blob: str, key: str) -> str | None:
@@ -33,7 +34,7 @@ def _field(blob: str, key: str) -> str | None:
 class LivRentSource(Source):
     name = "livrent"
 
-    def fetch(self, criteria: Criteria) -> list[RawListing]:
+    def fetch(self, criteria: Criteria, progress=_noop) -> list[RawListing]:
         session = http_session()
         links: list[str] = []
         for page in range(1, MAX_PAGES + 1):
@@ -43,13 +44,16 @@ class LivRentSource(Source):
             if not found:
                 break
             links.extend(found)
+        links = links[:MAX_DETAILS]
         listings = []
-        for link in links:
+        total = len(links)
+        for i, link in enumerate(links, 1):
             time.sleep(DETAIL_DELAY_S)
             try:
                 listings.append(self._detail(session, BASE + link))
             except Exception as e:
                 print(f"  livrent: skip {link}: {e}")
+            progress(i, total)
         return [l for l in listings if l]
 
     def _detail(self, session, url: str) -> RawListing | None:

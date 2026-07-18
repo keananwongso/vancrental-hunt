@@ -37,8 +37,10 @@ def _wait_any(pending: set, timeout: float) -> tuple[set, set]:
     return done, still
 
 # A source that hasn't returned in this long is treated as hung and reported as
-# timed-out, so the run can finish instead of spinning forever.
-SOURCE_TIMEOUT_S = 300
+# timed-out, so the run can finish instead of spinning forever. Set generously:
+# Craigslist alone paces ~60 pages × 3s ≈ 3+ min by design, so this must clear
+# the slowest *healthy* source with margin.
+SOURCE_TIMEOUT_S = 600
 HEARTBEAT_S = 2.0  # keep-alive ping so the UI can tell "still alive" from "died"
 
 
@@ -85,7 +87,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         from . import db
         from .config import load_criteria
         from .extract import normalize
-        from .report import render
+        from .report import listing_to_dict, render
         from .score import score_all
         from .sources.craigslist import CraigslistSource
         from .sources.livrent import LivRentSource
@@ -93,11 +95,13 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
         criteria = load_criteria()
         conn = db.connect()
-        known = {l.url for l, _ in db.all_listings(conn)}
+        # Fresh every run: wipe old listings so results reflect only this scrape.
+        # (extract + geocode caches are kept, so this stays fast and cheap.)
+        db.clear_listings(conn)
         sources = {
             "wesbrook": WesbrookSource(),
             "livrent": LivRentSource(),
-            "craigslist": CraigslistSource(known_urls=known),
+            "craigslist": CraigslistSource(),
         }
         # each source declares its access method for the tile subtitle
         methods = {"wesbrook": "admin-ajax", "livrent": "GraphQL/SSR",
@@ -136,7 +140,17 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         def fetch_one(name, source):
             t0 = time.monotonic()
             self._emit(type="source", id=name, status="fetching")
-            raws = source.fetch(criteria)
+            # throttle progress emits so a fast source doesn't flood the stream
+            last = [0.0]
+
+            def on_progress(done, total):
+                now = time.monotonic()
+                if now - last[0] >= 0.4 or done == total:
+                    last[0] = now
+                    self._emit(type="source", id=name, status="fetching",
+                               fetched=done, fetch_total=total)
+
+            raws = source.fetch(criteria, on_progress)
             return name, raws, round(time.monotonic() - t0, 1)
 
         new_ids: set[str] = set()
@@ -145,12 +159,18 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         futures = {pool.submit(fetch_one, n, s): n for n, s in sources.items()}
         pending = set(futures)
         try:
-            # Drain futures with an overall deadline so one hung source can't wedge the run.
+            # Drain futures as each finishes. Each source has its OWN deadline
+            # (SOURCE_TIMEOUT_S from run start), so a slow-but-healthy source
+            # (Craigslist takes minutes by design) never falsely times out
+            # another one. We wake up at least once a second to re-check.
             while pending:
-                remaining = SOURCE_TIMEOUT_S - (time.monotonic() - run_start)
-                done, pending = _wait_any(pending, timeout=max(remaining, 0))
-                if not done:  # deadline hit — mark every still-pending source as timed out
-                    for fut in pending:
+                done, pending = _wait_any(pending, timeout=1.0)
+                if not done:
+                    # nobody finished this second — time out only sources past their deadline
+                    elapsed = time.monotonic() - run_start
+                    if elapsed < SOURCE_TIMEOUT_S:
+                        continue  # still within budget; keep waiting (heartbeat keeps UI alive)
+                    for fut in list(pending):
                         name = futures[fut]
                         self._emit(type="source", id=name, status="timeout",
                                    error=f"no response in {SOURCE_TIMEOUT_S}s")
@@ -169,44 +189,69 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                                found=total, done=0, fetch_s=fetch_s)
                     norm_start = time.monotonic()
                     kept = 0
+                    this_source: list = []
                     for i, raw in enumerate(raws, 1):
                         try:
                             listing = normalize(raw, conn, use_llm=True)
                         except Exception:
                             continue
                         kept += 1
-                        if db.upsert(conn, listing):
-                            new_ids.add(listing.id)
+                        this_source.append(listing)
+                        db.upsert(conn, listing)
                         if i % 5 == 0 or i == total:
                             self._emit(type="source", id=name, status="normalizing",
                                        found=total, done=i,
                                        elapsed=round(time.monotonic() - norm_start, 1))
                     conn.commit()
+                    # Score this source's listings and push them to the UI right
+                    # away, so fast sources (Wesbrook ~7s) appear without waiting
+                    # for slow ones (Craigslist ~4min). Scoring uses the criteria;
+                    # scam market-median is refined in the final full pass.
+                    score_all(this_source, criteria)
+                    self._emit(type="listings", id=name,
+                               items=[listing_to_dict(l, criteria) for l in this_source])
                     took = round(time.monotonic() - norm_start + fetch_s, 1)
                     self._emit(type="source", id=name, status="done",
                                found=total, kept=kept, took=took)
                     source_stats.append({"id": name, "status": "done",
                                          "found": total, "took": took})
         finally:
-            stop_heartbeat.set()
             pool.shutdown(wait=False, cancel_futures=True)
 
-        self._emit(type="stage", text="Scoring & ranking…")
-        listings = [l for l, _ in db.all_listings(conn)]
-        score_all(listings, criteria)
-        for l in listings:
-            db.upsert(conn, l)
-        conn.commit()
-        matches = [l for l in listings if l.match_score >= 40]
+        # NOTE: heartbeat stays running through scoring + geocoding below.
+        # Geocoding hits Nominatim (~1s/uncached address) and can take minutes;
+        # without the heartbeat the stream goes silent and the browser gives up
+        # before the final "complete" event.
+        try:
+            self._emit(type="stage", text="Scoring & ranking…")
+            listings = [l for l, _ in db.all_listings(conn)]
+            score_all(listings, criteria)
+            for l in listings:
+                db.upsert(conn, l)
+            conn.commit()
+            matches = [l for l in listings if l.match_score >= 40]
 
-        self._emit(type="stage", text="Geocoding & writing report…")
-        # render writes web/listings.json (open_browser off — we're headless here);
-        # passing conn enables the geocode pass with its Nominatim cache.
-        with contextlib.redirect_stdout(io.StringIO()):
-            render(matches, criteria, new_ids, open_browser=False, conn=conn)
+            self._emit(type="stage", text="Geocoding addresses…")
+
+            geo_last = [0.0]
+
+            def geo_progress(done, total):
+                now = time.monotonic()
+                if now - geo_last[0] >= 0.5 or done == total:
+                    geo_last[0] = now
+                    self._emit(type="stage",
+                               text=f"Geocoding addresses… {done}/{total}")
+
+            # render writes web/listings.json (open_browser off — we're headless here);
+            # passing conn enables the geocode pass with its Nominatim cache.
+            with contextlib.redirect_stdout(io.StringIO()):
+                render(matches, criteria, new_ids, open_browser=False, conn=conn,
+                       geocode_progress=geo_progress)
+        finally:
+            stop_heartbeat.set()
 
         self._emit(type="complete", total=len(listings), shown=len(matches),
-                   new=len(new_ids), elapsed=round(time.monotonic() - run_start, 1),
+                   elapsed=round(time.monotonic() - run_start, 1),
                    sources=source_stats)
 
     def log_message(self, *args):  # quieter console

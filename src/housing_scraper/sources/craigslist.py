@@ -15,7 +15,7 @@ from parsel import Selector
 
 from ..config import Criteria
 from ..models import RawListing
-from .base import Source, http_session
+from .base import Source, http_session, _noop
 
 SEARCH = "https://vancouver.craigslist.org/search/apa"
 LIST_DELAY_S = 3.0
@@ -29,7 +29,7 @@ class CraigslistSource(Source):
     def __init__(self, known_urls: set[str] | None = None):
         self.known_urls = known_urls or set()
 
-    def fetch(self, criteria: Criteria) -> list[RawListing]:
+    def fetch(self, criteria: Criteria, progress=_noop) -> list[RawListing]:
         session = http_session()
         seen: dict[str, RawListing] = {}
         for query in criteria.craigslist_queries:
@@ -57,13 +57,13 @@ class CraigslistSource(Source):
                 )
             time.sleep(LIST_DELAY_S)
 
+        todo = [(u, r) for u, r in seen.items() if u not in self.known_urls]
+        total = min(len(todo), MAX_DETAILS)
         fetched = 0
         results = []
-        for url, raw in seen.items():
-            if url in self.known_urls:
-                continue  # already extracted in a previous run
+        for url, raw in todo:
             if fetched >= MAX_DETAILS:
-                print(f"  craigslist: detail cap {MAX_DETAILS} reached, {len(seen) - fetched} deferred to next run")
+                print(f"  craigslist: detail cap {MAX_DETAILS} reached, {len(todo) - fetched} deferred to next run")
                 break
             time.sleep(DETAIL_DELAY_S)
             try:
@@ -73,6 +73,7 @@ class CraigslistSource(Source):
                 print(f"  craigslist: skip {url}: {e}")
                 continue
             results.append(raw)
+            progress(fetched, total)
         return results
 
     def _enrich(self, session, raw: RawListing) -> None:

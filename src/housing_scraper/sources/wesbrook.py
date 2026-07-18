@@ -13,7 +13,7 @@ from parsel import Selector
 
 from ..config import Criteria
 from ..models import RawListing
-from .base import Source, http_session
+from .base import Source, http_session, _noop
 
 BASE = "https://www.wesbrookproperties.com"
 AJAX = f"{BASE}/wp-admin/admin-ajax.php"
@@ -22,11 +22,13 @@ AJAX = f"{BASE}/wp-admin/admin-ajax.php"
 class WesbrookSource(Source):
     name = "wesbrook"
 
-    def fetch(self, criteria: Criteria) -> list[RawListing]:
+    def fetch(self, criteria: Criteria, progress=_noop) -> list[RawListing]:
         session = http_session()
         listings: list[RawListing] = []
-        for slug in self._building_slugs(session):
+        slugs = self._building_slugs(session)
+        for i, slug in enumerate(slugs, 1):
             listings.extend(self._building_units(session, slug))
+            progress(i, len(slugs))
         return listings
 
     def _building_slugs(self, session) -> list[str]:

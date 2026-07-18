@@ -69,16 +69,10 @@ def render(
     new_ids: set[str],
     open_browser: bool = True,
     conn=None,
+    geocode_progress=None,
 ) -> Path:
     for l in listings:
-        mi = l.move_in_date
-        if isinstance(mi, date):
-            l.in_window = criteria.move_in.start <= mi <= criteria.move_in.end  # type: ignore[attr-defined]
-            l.move_in_label = mi.strftime("%b %-d, %Y")  # type: ignore[attr-defined]
-        else:
-            l.in_window = False  # type: ignore[attr-defined]
-            l.move_in_label = {"now": "now", "flexible": "flexible"}.get(mi, "unknown — ask")  # type: ignore[attr-defined]
-        l.badge = scam_badge(l.scam_score)  # type: ignore[attr-defined]
+        set_display_fields(l, criteria)
 
     if conn is not None:
         from .geocode import geocode_listings, haversine_km
@@ -88,7 +82,7 @@ def render(
         )
         if uncached:
             print(f"Geocoding {uncached} addresses via Nominatim (~{uncached}s)...")
-        geocode_listings(listings, conn)
+        geocode_listings(listings, conn, progress=geocode_progress)
         if criteria.location:
             clat, clng = criteria.location.lat, criteria.location.lng
             for l in listings:
@@ -122,35 +116,57 @@ def render(
     return out
 
 
+def set_display_fields(l: Listing, criteria: Criteria) -> None:
+    """Fill in_window / move_in_label / badge — the fields the UI shows.
+    Called by render() and also by the server when streaming listings early."""
+    mi = l.move_in_date
+    if isinstance(mi, date):
+        l.in_window = criteria.move_in.start <= mi <= criteria.move_in.end  # type: ignore[attr-defined]
+        l.move_in_label = mi.strftime("%b %-d, %Y")  # type: ignore[attr-defined]
+    else:
+        l.in_window = False  # type: ignore[attr-defined]
+        l.move_in_label = {"now": "now", "flexible": "flexible"}.get(mi, "unknown — ask")  # type: ignore[attr-defined]
+    l.badge = scam_badge(l.scam_score)  # type: ignore[attr-defined]
+
+
+def listing_to_dict(l: Listing, criteria: Criteria) -> dict:
+    """One listing in the shape the dashboard expects. Sets display fields first."""
+    set_display_fields(l, criteria)
+    return {
+        "id": l.id, "source": l.source, "url": l.url, "title": l.title,
+        "price": l.price, "beds": l.beds, "baths": l.baths, "sqft": l.sqft,
+        "area": l.area or l.address, "move_in": l.move_in_label,  # type: ignore[attr-defined]
+        "in_window": l.in_window,  # type: ignore[attr-defined]
+        "match_score": l.match_score, "scam": l.badge,  # type: ignore[attr-defined]
+        "scam_flags": l.scam_flags, "furnished": l.furnished, "pets": l.pets,
+        "lat": l.lat, "lng": l.lng, "maps_url": l.maps_url, "dist_km": l.dist_km,
+    }
+
+
+def criteria_to_dict(criteria: Criteria) -> dict:
+    return {
+        "beds": criteria.beds,
+        "baths": criteria.baths,
+        "max_price": criteria.max_price,
+        "move_in_start": criteria.move_in.start.isoformat(),
+        "move_in_end": criteria.move_in.end.isoformat(),
+        "location": {
+            "lat": criteria.location.lat,
+            "lng": criteria.location.lng,
+            "radius_km": criteria.location.radius_km,
+        } if criteria.location else None,
+    }
+
+
 def _write_web_json(listings: list[Listing], criteria: Criteria, new_ids: set[str]) -> None:
     """Snapshot for the localhost dashboard at web/index.html."""
     web_dir = PROJECT_ROOT / "web"
     web_dir.mkdir(exist_ok=True)
     payload = {
         "generated": datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "criteria": {
-            "beds": criteria.beds,
-            "baths": criteria.baths,
-            "max_price": criteria.max_price,
-            "move_in_start": criteria.move_in.start.isoformat(),
-            "move_in_end": criteria.move_in.end.isoformat(),
-            "location": {
-                "lat": criteria.location.lat,
-                "lng": criteria.location.lng,
-                "radius_km": criteria.location.radius_km,
-            } if criteria.location else None,
-        },
+        "criteria": criteria_to_dict(criteria),
         "listings": [
-            {
-                "id": l.id, "source": l.source, "url": l.url, "title": l.title,
-                "price": l.price, "beds": l.beds, "baths": l.baths, "sqft": l.sqft,
-                "area": l.area or l.address, "move_in": l.move_in_label,  # type: ignore[attr-defined]
-                "in_window": l.in_window,  # type: ignore[attr-defined]
-                "match_score": l.match_score, "scam": l.badge,  # type: ignore[attr-defined]
-                "scam_flags": l.scam_flags, "furnished": l.furnished, "pets": l.pets,
-                "is_new": l.id in new_ids,
-                "lat": l.lat, "lng": l.lng, "maps_url": l.maps_url, "dist_km": l.dist_km,
-            }
+            {**listing_to_dict(l, criteria), "is_new": l.id in new_ids}
             for l in listings
         ],
     }

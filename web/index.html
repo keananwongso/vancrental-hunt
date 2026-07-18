@@ -608,7 +608,14 @@ function wireScrape() {
     if (terminalOk && ev.took != null) timeEl.textContent = fmt(ev.took) + (ev.kept != null ? ` · ${ev.kept} kept` : '');
     else if (terminalBad) timeEl.textContent = '';
     const cnt = el.querySelector('.a-count'), bar = el.querySelector('.a-bar');
-    if (ev.found != null) {
+    if (ev.status === 'fetching' && ev.fetch_total) {
+      // live "downloading 45/170" so the slow fetch phase doesn't look frozen
+      cnt.hidden = false;
+      el.querySelector('.a-count .n').textContent = ev.fetched || 0;
+      el.querySelector('.a-count .sub').textContent = ` / ${ev.fetch_total} listings`;
+      bar.hidden = false;
+      bar.querySelector('i').style.width = Math.round(100 * (ev.fetched || 0) / ev.fetch_total) + '%';
+    } else if (ev.found != null) {
       cnt.hidden = false;
       el.querySelector('.a-count .n').textContent = ev.status === 'normalizing' && ev.done != null ? ev.done : ev.found;
       el.querySelector('.a-count .sub').textContent = ev.status === 'normalizing'
@@ -648,14 +655,22 @@ function wireScrape() {
     run.hidden = false; grid.innerHTML = ''; stage.textContent = 'Starting scrape…';
     clock.textContent = '0s';
     for (const k in tiles) delete tiles[k];
+    // Fresh run: clear the current results so listings stream in live from zero.
+    state.data = { ...(state.data || {}), listings: [], criteria: state.crit || (state.data && state.data.criteria) };
+    render();
     startTicker();
     let lastBeat = performance.now();
     let sawComplete = false;
-    // watchdog: if no server message (incl. heartbeat) for 15s, the stream is dead
+    let staleWarned = false;
+    // Watchdog: the server heartbeats every 2s. If we go 30s with nothing, warn —
+    // but DON'T kill the run; if messages resume, clear the warning and carry on.
     const watchdog = setInterval(() => {
-      if (performance.now() - lastBeat > 15000) {
-        clearInterval(watchdog);
-        finishRun('<span style="color:var(--warn,#b58900)">No response from server for 15s — the scrape may have crashed. Check the terminal running <code>uv run housing-scraper serve</code>.</span>');
+      const silent = performance.now() - lastBeat;
+      if (silent > 30000 && !staleWarned) {
+        staleWarned = true;
+        stage.innerHTML = '<span style="color:var(--warn,#b58900)">No response for 30s — server may be stuck. It will still try to finish; check the terminal if this persists.</span>';
+      } else if (silent < 5000 && staleWarned) {
+        staleWarned = false;  // recovered
       }
     }, 3000);
     try {
@@ -678,6 +693,11 @@ function wireScrape() {
             if (!ev.sources.length) stage.textContent = 'No sources enabled.';
           } else if (ev.type === 'source') {
             update(ev);
+          } else if (ev.type === 'listings') {
+            // a source finished — append its listings and show them right away
+            state.data.listings.push(...ev.items);
+            buildSources();
+            render();
           } else if (ev.type === 'heartbeat') {
             // keep-alive; ticker already shows elapsed. Nothing to render.
           } else if (ev.type === 'stage') {
@@ -696,15 +716,24 @@ function wireScrape() {
         }
       }
       clearInterval(watchdog);
-      if (!sawComplete) {
-        // stream ended without a terminal event — the connection dropped
-        finishRun('<span style="color:var(--warn,#b58900)">Connection ended before the scrape reported completion. Data may be partial.</span>');
+      // Always reload listings.json at the end. Even if we never saw a clean
+      // "complete" (stream stalled/dropped), the server writes the file before
+      // finishing, so we still pick up whatever it produced.
+      let fresh = null;
+      try {
+        fresh = await fetch('listings.json?t=' + Date.now()).then(r => r.json());
+      } catch (_) {}
+      if (fresh) {
+        state.data = fresh; state.crit = fresh.criteria;
+        $('lastRefreshed').textContent = fresh.generated || '—';
+        buildSources();
+        render();
       }
-      const fresh = await fetch('listings.json?t=' + Date.now()).then(r => r.json());
-      state.data = fresh; state.crit = fresh.criteria;
-      $('lastRefreshed').textContent = fresh.generated || '—';
-      buildSources();
-      render();
+      if (!sawComplete) {
+        finishRun(fresh
+          ? '<span style="color:var(--warn,#b58900)">Stream ended early, but the latest data was reloaded.</span>'
+          : '<span style="color:var(--bad)">Scrape ended without producing data. Check the terminal.</span>');
+      }
     } catch (err) {
       clearInterval(watchdog);
       run.hidden = false;
@@ -748,13 +777,15 @@ function buildSources() {
   const el = $('sources');
   el.innerHTML = '';
   const present = [...new Set(state.data.listings.map(l => l.source))].sort();
+  const prev = state.sources || {};
   state.sources = {};
   present.forEach(id => {
-    state.sources[id] = true;
+    state.sources[id] = id in prev ? prev[id] : true;  // keep user's toggle across live updates
     const count = state.data.listings.filter(l => l.source === id).length;
+    const on = state.sources[id];
     const row = document.createElement('div');
-    row.className = 'check-row checked';
-    row.innerHTML = `<span class="check-box">${ICON.check}</span><span class="name">${SOURCE_NAMES[id] || id}</span><span class="src-count mono">${count}</span>`;
+    row.className = 'check-row' + (on ? ' checked' : '');
+    row.innerHTML = `<span class="check-box">${on ? ICON.check : ''}</span><span class="name">${SOURCE_NAMES[id] || id}</span><span class="src-count mono">${count}</span>`;
     row.onclick = () => { state.sources[id] = !state.sources[id]; row.classList.toggle('checked', state.sources[id]); render(); };
     el.appendChild(row);
   });

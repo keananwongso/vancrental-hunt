@@ -19,10 +19,17 @@ _RATE_DELAY = 1.1  # Nominatim requires ≥1s between requests
 log = logging.getLogger(__name__)
 
 
-def geocode_listings(listings: list[Listing], conn) -> None:
-    """Populate lat/lng/maps_url on each listing in place. Caches results in DB."""
-    for listing in listings:
+def geocode_listings(listings: list[Listing], conn, progress=None) -> None:
+    """Populate lat/lng/maps_url on each listing in place. Caches results in DB.
+
+    `progress(done, total)` is called after each listing (if given) so a caller
+    can report progress — geocoding uncached addresses is slow (~1s each).
+    """
+    total = len(listings)
+    for i, listing in enumerate(listings, 1):
         _geocode_one(listing, conn)
+        if progress:
+            progress(i, total)
 
 
 def _geocode_one(listing: Listing, conn) -> None:

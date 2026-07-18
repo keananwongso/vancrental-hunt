@@ -39,6 +39,14 @@ def connect() -> sqlite3.Connection:
     return conn
 
 
+def clear_listings(conn: sqlite3.Connection) -> None:
+    """Drop all listings so a run starts fresh. Leaves extract_cache and
+    geocode_cache intact — those just make re-runs cheap and don't affect
+    which listings show up."""
+    conn.execute("DELETE FROM listings")
+    conn.commit()
+
+
 def upsert(conn: sqlite3.Connection, listing: Listing) -> bool:
     """Insert or refresh a listing. Returns True if it's new."""
     now = datetime.now().isoformat()

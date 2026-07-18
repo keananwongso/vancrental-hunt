@@ -14,7 +14,7 @@ from apify_client import ApifyClient
 
 from ..config import Criteria
 from ..models import RawListing
-from .base import Source
+from .base import Source, _noop
 
 ZUMPER_URL = (
     "https://www.zumper.com/apartments-for-rent/vancouver-bc/2-bedrooms?price-max={max_price}"
@@ -47,7 +47,7 @@ class ApifyActorSource(Source):
         self.actor_id = actor_id
         self.input_builder = input_builder
 
-    def fetch(self, criteria: Criteria) -> list[RawListing]:
+    def fetch(self, criteria: Criteria, progress=_noop) -> list[RawListing]:
         client = ApifyClient(os.environ["APIFY_TOKEN"])
         run = client.actor(self.actor_id).call(
             run_input=self.input_builder(criteria), run_timeout=timedelta(minutes=10)

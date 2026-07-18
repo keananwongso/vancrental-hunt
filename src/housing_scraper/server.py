@@ -49,6 +49,12 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(WEB_DIR), **kwargs)
 
+    def end_headers(self):
+        # Never cache the app shell / data — otherwise a browser holds a stale
+        # index.html after code changes and it looks like fixes didn't land.
+        self.send_header("Cache-Control", "no-store, must-revalidate")
+        super().end_headers()
+
     def do_POST(self):
         path, _, query = self.path.partition("?")
         if path == "/geocode":

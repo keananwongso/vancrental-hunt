@@ -718,9 +718,12 @@ function boot() {
 
 /* ---------- landing page: plain-text search + manual params ---------- */
 function showDashboard() {
-  $('landing').hidden = true;
-  $('landing').classList.remove('as-overlay');
+  const landing = $('landing');
+  landing.hidden = true;
+  landing.classList.remove('as-overlay');
+  $('landingClose').hidden = true;
   $('app').hidden = false;
+  window.scrollTo(0, 0);   // in case the overlay was scrolled
 }
 function showLanding(firstRun) {
   // firstRun: full-screen entry (no data yet, can't dismiss).

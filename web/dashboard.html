@@ -712,8 +712,10 @@ function boot() {
 
   // Arriving from a search (index.html → dashboard.html?scrape=1): auto-trigger
   // the scrape so fresh listings stream in immediately. Reuses the Scrape button's
-  // own handler for identical behavior.
+  // own handler for identical behavior. Strip ?scrape=1 from the URL first so a
+  // refresh doesn't fire a second scrape (which the server rejects with 409).
   if (new URLSearchParams(location.search).get('scrape') === '1') {
+    history.replaceState(null, '', location.pathname);
     $('scrape').click();
   }
 }
@@ -819,16 +821,13 @@ function wireScrape() {
     if (btn.classList.contains('busy')) return;
     btn.classList.add('busy');
     label.textContent = 'Scraping…';
-    run.hidden = false; grid.innerHTML = ''; stage.textContent = 'Starting scrape…';
-    clock.textContent = '0s';
-    for (const k in tiles) delete tiles[k];
-    // Fresh run: clear the current results so listings stream in live from zero.
-    state.data = { ...(state.data || {}), listings: [], criteria: state.crit || (state.data && state.data.criteria) };
-    render();
-    startTicker();
+    // Keep a snapshot of current listings so we can restore them if the scrape
+    // never actually starts (e.g. 409: one is already running).
+    const prevListings = (state.data && state.data.listings) ? [...state.data.listings] : [];
     let lastBeat = performance.now();
     let sawComplete = false;
     let staleWarned = false;
+    let scrapeStarted = false;
     // Watchdog: the server heartbeats every 2s. If we go 30s with nothing, warn —
     // but DON'T kill the run; if messages resume, clear the warning and carry on.
     const watchdog = setInterval(() => {
@@ -843,7 +842,23 @@ function wireScrape() {
     try {
       const url = state.useApify ? '/scrape?apify=1' : '/scrape';
       const res = await fetch(url, { method: 'POST' });
+      if (res.status === 409) {
+        // a scrape is already running — not an error, just tell them and bail
+        run.hidden = false;
+        stage.innerHTML = '<span style="color:var(--warn,#b58900)">A scrape is already running — showing existing listings.</span>';
+        clearInterval(watchdog);
+        btn.classList.remove('busy'); label.textContent = 'Scrape now';
+        return;
+      }
       if (!res.ok || !res.body) throw new Error('server returned ' + res.status);
+      // Scrape confirmed started: NOW reset the grid so listings stream from zero.
+      scrapeStarted = true;
+      run.hidden = false; grid.innerHTML = ''; stage.textContent = 'Starting scrape…';
+      clock.textContent = '0s';
+      for (const k in tiles) delete tiles[k];
+      state.data = { ...(state.data || {}), listings: [], criteria: state.crit || (state.data && state.data.criteria) };
+      render();
+      startTicker();
       const reader = res.body.getReader(), dec = new TextDecoder();
       let buf = '';
       for (;;) {
@@ -907,8 +922,14 @@ function wireScrape() {
       }
     } catch (err) {
       clearInterval(watchdog);
+      // If the scrape never actually started, restore the listings we cleared so
+      // the user isn't left staring at an empty grid.
+      if (!scrapeStarted && prevListings.length) {
+        state.data = { ...(state.data || {}), listings: prevListings };
+        buildSources(); recomputeDistances(); render();
+      }
       run.hidden = false;
-      finishRun(`<span style="color:var(--bad)">Error: ${err.message}. Start the server with </span><code>uv run housing-scraper serve</code>`);
+      finishRun(`<span style="color:var(--bad)">Couldn't reach the server (${err.message}). Is it running? <code>uv run housing-scraper serve</code></span>`);
     }
   });
 }

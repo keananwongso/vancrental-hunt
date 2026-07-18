@@ -42,6 +42,59 @@
   a { color: inherit; text-decoration: none; }
   ::selection { background: var(--accent-fade); }
 
+  /* ============ LANDING ============ */
+  .landing { min-height: 100vh; display: grid; place-items: center; padding: 40px 20px;
+    background:
+      radial-gradient(90% 60% at 50% 0%, rgba(45,212,191,0.06), transparent 60%),
+      var(--bg); }
+  .landing-inner { width: 100%; max-width: 680px; text-align: center; }
+  .beta-pill { display: inline-block; font-size: 12px; color: var(--text-2);
+    border: 1px solid var(--border); border-radius: 99px; padding: 4px 14px; margin-bottom: 26px; }
+  .landing-title { font-size: 52px; line-height: 1.05; font-weight: 700; letter-spacing: -0.03em; margin-bottom: 18px; }
+  .landing-sub { color: var(--text-2); font-size: 15px; line-height: 1.6; max-width: 520px; margin: 0 auto 34px; }
+  .search-shell { display: flex; gap: 10px; align-items: stretch; background: var(--bg-panel);
+    border: 1px solid var(--border); border-radius: 14px; padding: 10px; transition: border-color .15s; }
+  .search-shell:focus-within { border-color: var(--accent-dim); }
+  .search-shell textarea { flex: 1; background: transparent; border: none; outline: none; resize: none;
+    color: var(--text); font-family: var(--sans); font-size: 15px; line-height: 1.5; padding: 8px 10px; }
+  .nl-go { background: linear-gradient(135deg, var(--accent), var(--accent-dim)); color: #05201c;
+    border: none; border-radius: 9px; font-weight: 650; font-size: 14px; padding: 0 22px; cursor: pointer;
+    font-family: var(--sans); transition: opacity .15s; align-self: center; height: 42px; }
+  .nl-go:hover { opacity: .9; }
+  .nl-go:disabled { opacity: .5; cursor: progress; }
+  .example-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 20px; }
+  .ex-chip { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 99px;
+    color: var(--text-2); font-size: 12.5px; padding: 7px 14px; cursor: pointer; font-family: var(--sans);
+    transition: color .12s, border-color .12s; }
+  .ex-chip:hover { color: var(--text); border-color: var(--accent-dim); }
+  .clarify { margin-top: 26px; text-align: left; background: var(--bg-panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px 20px; }
+  .clarify h4 { font-size: 14px; margin-bottom: 14px; color: var(--text); }
+  .clarify .q { margin-bottom: 14px; }
+  .clarify .q label { display: block; font-size: 13px; color: var(--text-2); margin-bottom: 6px; }
+  .clarify .q input { width: 100%; background: var(--bg-elev); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); padding: 9px 11px; font-size: 14px; font-family: var(--sans); outline: none; }
+  .clarify .q input:focus { border-color: var(--accent-dim); }
+  .parsed-box { margin-top: 22px; text-align: left; background: var(--accent-fade);
+    border: 1px solid var(--accent-dim); border-radius: 12px; padding: 16px 18px; }
+  .parsed-box .ps-sum { font-size: 14px; color: var(--text); margin-bottom: 12px; }
+  .parsed-box .ps-facts { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+  .parsed-box .ps-fact { font-family: var(--mono); font-size: 12px; color: var(--accent);
+    background: var(--bg-panel); border-radius: 6px; padding: 3px 9px; }
+  .manual-toggle { margin-top: 20px; background: none; border: none; color: var(--text-2);
+    font-size: 13px; cursor: pointer; font-family: var(--sans); }
+  .manual-toggle:hover { color: var(--accent); }
+  .manual-panel { margin-top: 18px; text-align: left; background: var(--bg-panel);
+    border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .mp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .mp-grid label { display: flex; flex-direction: column; font-size: 12px; color: var(--text-2); gap: 5px; }
+  .mp-grid label.mp-wide { grid-column: 1 / -1; }
+  .mp-grid input { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); padding: 8px 10px; font-size: 13px; font-family: var(--sans); outline: none; }
+  .mp-grid input:focus { border-color: var(--accent-dim); }
+  .landing .err-line { color: var(--bad, #f87171); font-size: 13px; margin-top: 14px; }
+  @media (max-width: 560px) { .landing-title { font-size: 38px; } }
+
   .util-label {
     font-size: 10.5px;
     letter-spacing: 0.09em;
@@ -377,14 +430,59 @@
 </style>
 </head>
 <body>
-<div class="app">
+
+<!-- ============ LANDING ============ -->
+<div class="landing" id="landing">
+  <div class="landing-inner">
+    <span class="beta-pill">Vancouver rentals</span>
+    <h1 class="landing-title">Find your next place<br>in plain English</h1>
+    <p class="landing-sub">Describe what you're looking for — beds, budget, move-in, neighbourhood — and we'll
+      scrape liv.rent, Craigslist and Wesbrook, rank the matches, and flag the sketchy ones.</p>
+
+    <div class="search-shell">
+      <textarea id="nlInput" rows="2" placeholder="e.g. 2 bed 2 bath near UBC, moving in September, under $3,500…"></textarea>
+      <button id="nlGo" class="nl-go">Search</button>
+    </div>
+
+    <div class="example-chips" id="exampleChips">
+      <button class="ex-chip">2 bed near UBC, Sept move-in, under $3500</button>
+      <button class="ex-chip">1 bedroom in Kitsilano for July, max $2200</button>
+      <button class="ex-chip">2 bath, pet-friendly, close to downtown</button>
+      <button class="ex-chip">cheapest 2-bed within 5km of Wesbrook Village</button>
+    </div>
+
+    <!-- clarifying questions appear here -->
+    <div class="clarify" id="clarify" hidden></div>
+
+    <!-- parsed summary + confirm -->
+    <div class="parsed-box" id="parsedBox" hidden></div>
+
+    <button class="manual-toggle" id="manualToggle">or set parameters manually →</button>
+
+    <!-- manual params panel -->
+    <div class="manual-panel" id="manualPanel" hidden>
+      <div class="mp-grid">
+        <label>Bedrooms<input type="number" id="mpBeds" min="0" step="1" value="2"></label>
+        <label>Bathrooms<input type="number" id="mpBaths" min="0" step="0.5" value="2"></label>
+        <label>Max price (CAD)<input type="number" id="mpMax" min="0" step="100" value="3500"></label>
+        <label>Move-in date<input type="date" id="mpMoveIn"></label>
+        <label>Flex (± days)<input type="number" id="mpFlex" min="0" step="1" value="14"></label>
+        <label>Areas (comma-sep)<input type="text" id="mpAreas" placeholder="ubc, kitsilano"></label>
+        <label class="mp-wide">Center address (optional)<input type="text" id="mpAddr" placeholder="3335 Webber Ln, Vancouver"></label>
+      </div>
+      <button id="mpGo" class="nl-go" style="width:100%;margin-top:12px;">Use these & continue</button>
+    </div>
+  </div>
+</div>
+
+<div class="app" id="app" hidden>
   <!-- ============ SIDEBAR ============ -->
   <aside class="sidebar">
-    <div class="brand">
+    <div class="brand" id="homeBrand" style="cursor:pointer" title="New search">
       <span class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="#0b0f14" stroke-width="2.4"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg></span>
       <h1>Rentfinder</h1>
     </div>
-    <div class="brand-sub">UBC · Wesbrook · Vancouver</div>
+    <div class="brand-sub">New search ↑</div>
 
     <div class="filter-group">
       <span class="util-label">Search</span>
@@ -559,12 +657,21 @@ const ICON = {
 };
 
 /* ---------- init ---------- */
+// Empty defaults so a fresh clone (no listings.json yet) still boots with a
+// working sidebar + Scrape button, instead of showing a scary error.
+const EMPTY_DATA = {
+  generated: null,
+  criteria: { beds: 2, baths: 2, max_price: 3500,
+              move_in_start: null, move_in_end: null, location: null },
+  listings: [],
+};
+
 fetch('listings.json')
   .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
   .then(json => { state.data = json; state.crit = json.criteria; boot(); })
-  .catch(err => {
-    $('grid').innerHTML = '<div class="empty" style="grid-column:1/-1"><h3>Could not load listings.json</h3><p>Serve over HTTP: <code>python3 -m http.server 5173</code> — file:// is blocked by the browser.</p></div>';
-    console.error(err);
+  .catch(() => {
+    // No data yet (first run) — boot empty so the user can hit "Scrape now".
+    state.data = EMPTY_DATA; state.crit = EMPTY_DATA.criteria; boot();
   });
 
 function boot() {
@@ -584,7 +691,141 @@ function boot() {
   wire();
   wireScrape();
   wireCenter();
+  wireLanding();
   render();
+}
+
+/* ---------- landing page: plain-text search + manual params ---------- */
+function showDashboard() {
+  $('landing').hidden = true;
+  $('app').hidden = false;
+}
+function showLanding() {
+  $('app').hidden = true;
+  $('landing').hidden = false;
+}
+
+function wireLanding() {
+  const input = $('nlInput'), go = $('nlGo'), clarify = $('clarify'),
+        parsedBox = $('parsedBox');
+  let lastText = '';
+
+  // example chips fill the box
+  $('exampleChips').querySelectorAll('.ex-chip').forEach(c =>
+    c.onclick = () => { input.value = c.textContent; input.focus(); });
+
+  const runParse = async (answers) => {
+    const text = input.value.trim();
+    if (!text) return;
+    lastText = text;
+    go.disabled = true; go.textContent = 'Thinking…';
+    clarify.hidden = true; parsedBox.hidden = true;
+    try {
+      const res = await fetch('/parse-search', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, answers: answers || null }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      if (data.questions && data.questions.length) {
+        showClarify(data.questions);
+      } else {
+        showParsed(data);
+      }
+    } catch (e) {
+      parsedBox.hidden = false;
+      parsedBox.innerHTML = `<div class="ps-sum" style="color:var(--bad)">Couldn't parse that: ${e.message}. Try the manual params below.</div>`;
+    } finally {
+      go.disabled = false; go.textContent = 'Search';
+    }
+  };
+
+  const showClarify = (questions) => {
+    clarify.hidden = false;
+    clarify.innerHTML = `<h4>A couple quick questions:</h4>` +
+      questions.map(q =>
+        `<div class="q"><label>${q.question}</label>
+         <input data-field="${q.field}" placeholder="…"></div>`).join('') +
+      `<button class="nl-go" id="clarifyGo" style="margin-top:4px;">Continue</button>`;
+    $('clarifyGo').onclick = () => {
+      const answers = {};
+      clarify.querySelectorAll('input[data-field]').forEach(i => {
+        if (i.value.trim()) answers[i.dataset.field] = i.value.trim();
+      });
+      runParse(answers);   // re-parse with the answers folded in
+    };
+    clarify.querySelector('input')?.focus();
+  };
+
+  const showParsed = (data) => {
+    const c = data.criteria;
+    const facts = [];
+    if (c.beds != null) facts.push(`${c.beds} bed`);
+    if (c.baths != null) facts.push(`${c.baths} bath`);
+    if (c.max_price) facts.push(`≤ $${c.max_price.toLocaleString()}`);
+    if (c.move_in_date) facts.push(`move-in ${c.move_in_date}`);
+    (c.areas || []).forEach(a => facts.push(a));
+    if (c.center_address) facts.push(`near ${c.center_address}`);
+    parsedBox.hidden = false;
+    parsedBox.innerHTML =
+      `<div class="ps-sum">${data.summary || 'Here’s what I understood:'}</div>
+       <div class="ps-facts">${facts.map(f => `<span class="ps-fact">${f}</span>`).join('')}</div>
+       <button class="nl-go" id="parsedGo">Search these listings →</button>`;
+    $('parsedGo').onclick = () => applyAndGo({ criteria: c });
+  };
+
+  const applyAndGo = async (payload) => {
+    const btn = document.querySelector('#parsedGo, #mpGo');
+    if (btn) { btn.disabled = true; btn.textContent = 'Setting up…'; }
+    try {
+      const res = await fetch('/apply-criteria', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      // criteria written; enter the dashboard. If there's no data yet the user
+      // just hits "Scrape now"; if there is, we reload it fresh.
+      state.crit = { ...state.crit, beds: payload.criteria.beds ?? state.crit.beds };
+      showDashboard();
+      // reload latest snapshot so header/filters reflect new criteria if present
+      try {
+        const fresh = await fetch('listings.json?t=' + Date.now()).then(r => r.json());
+        state.data = fresh; state.crit = fresh.criteria; buildSources(); recomputeDistances(); render();
+      } catch (_) {}
+    } catch (e) {
+      alert('Could not apply search: ' + e.message);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Search these listings →'; }
+    }
+  };
+
+  go.onclick = () => runParse();
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); runParse(); }
+  });
+  $('homeBrand').onclick = showLanding;   // click logo → back to search
+
+  // manual params toggle
+  $('manualToggle').onclick = () => {
+    const p = $('manualPanel');
+    p.hidden = !p.hidden;
+    $('manualToggle').textContent = p.hidden ? 'or set parameters manually →' : 'hide manual parameters';
+  };
+  $('mpGo').onclick = () => {
+    const areas = $('mpAreas').value.split(',').map(s => s.trim()).filter(Boolean);
+    const moveIn = $('mpMoveIn').value;
+    const criteria = {
+      beds: +$('mpBeds').value, baths: +$('mpBaths').value,
+      max_price: +$('mpMax').value, min_price: 0,
+      move_in: moveIn ? { target: moveIn, window_days: +$('mpFlex').value || 14 }
+                      : { target: new Date().toISOString().slice(0,10), window_days: 30 },
+      areas: areas.length ? areas : ['vancouver'],
+      craigslist_queries: areas.length ? [areas[0], ''] : [''],
+    };
+    if ($('mpAddr').value.trim()) criteria._center_address = $('mpAddr').value.trim();
+    applyAndGo({ criteria });
+  };
 }
 
 /* ---------- scrape trigger — renders a multi-agent tile grid from the server's JSON event stream ---------- */
@@ -929,9 +1170,15 @@ function render() {
 
   const grid = $('grid');
   if (!list.length) {
-    grid.innerHTML = `<div class="empty" style="grid-column:1/-1">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/><path d="M8 11h6"/></svg>
-      <h3>No listings match</h3><p>Try widening the price, bedrooms, or turning off the September filter.</p></div>`;
+    // distinguish "no data at all yet" (fresh clone) from "filters exclude everything"
+    const noData = !state.data.listings.length;
+    grid.innerHTML = noData
+      ? `<div class="empty" style="grid-column:1/-1">
+           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
+           <h3>No listings yet</h3><p>Hit <strong>Scrape now</strong> up top to fetch current rentals.</p></div>`
+      : `<div class="empty" style="grid-column:1/-1">
+           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/><path d="M8 11h6"/></svg>
+           <h3>No listings match</h3><p>Try widening the price, bedrooms, or turning off filters.</p></div>`;
     return;
   }
   grid.innerHTML = list.map(cardHTML).join('');

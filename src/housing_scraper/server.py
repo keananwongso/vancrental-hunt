@@ -54,6 +54,12 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         if path == "/geocode":
             self._handle_geocode(query)
             return
+        if path == "/parse-search":
+            self._handle_parse_search()
+            return
+        if path == "/apply-criteria":
+            self._handle_apply_criteria()
+            return
         if path != "/scrape":
             self.send_error(404)
             return
@@ -90,12 +96,60 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         if result is None:
             self.send_error(404, "address not found")
             return
-        body = json.dumps({"lat": result[0], "lng": result[1], "address": address}).encode()
-        self.send_response(200)
+        self._send_json({"lat": result[0], "lng": result[1], "address": address})
+
+    def _read_json_body(self) -> dict:
+        length = int(self.headers.get("Content-Length", 0))
+        if not length:
+            return {}
+        return json.loads(self.rfile.read(length) or b"{}")
+
+    def _send_json(self, obj, status: int = 200):
+        body = json.dumps(obj).encode()
+        self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _handle_parse_search(self):
+        """POST /parse-search {text, answers?} → {criteria, questions, summary}.
+        Parses a plain-text housing request into structured criteria, asking
+        clarifying questions only when an essential field is missing."""
+        from .search_intent import parse_request
+        try:
+            data = self._read_json_body()
+            parsed = parse_request(data.get("text", ""), data.get("answers"))
+            self._send_json(parsed)
+        except Exception as e:
+            traceback.print_exc()
+            self._send_json({"error": str(e)[:200]}, status=500)
+
+    def _handle_apply_criteria(self):
+        """POST /apply-criteria {parsed} OR {criteria} → writes criteria.yaml.
+        Accepts either the raw parse-search output (with a `criteria` sub-object)
+        or a ready criteria.yaml dict, so the manual params panel can post directly."""
+        from . import db
+        from .search_intent import criteria_from_parsed, write_criteria
+        try:
+            data = self._read_json_body()
+            if "criteria" in data and "move_in" not in data.get("criteria", {}):
+                # parse-search shape → convert (geocodes center address)
+                criteria = criteria_from_parsed(data, conn=db.connect())
+            else:
+                # already a criteria.yaml-shaped dict (from manual params)
+                criteria = data.get("criteria", data)
+                addr = criteria.pop("_center_address", None)
+                if addr:
+                    from .geocode import geocode_address
+                    loc = geocode_address(addr, conn=db.connect())
+                    if loc:
+                        criteria["location"] = {"lat": loc[0], "lng": loc[1], "radius_km": 15}
+            write_criteria(criteria)
+            self._send_json({"ok": True, "criteria": criteria})
+        except Exception as e:
+            traceback.print_exc()
+            self._send_json({"error": str(e)[:200]}, status=500)
 
     _emit_lock = threading.Lock()
 

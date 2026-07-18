@@ -20,7 +20,9 @@ uv run housing-scraper serve    # dashboard at localhost:5173 — this is the ma
 uv run housing-scraper run      # scrape once from the terminal instead
 ```
 
-`serve` gives you a dashboard with filters (beds, price, distance, source, move-in window) and a **Scrape now** button that shows live progress per source. The button uses the free sources; apartments.com and Zumper cost Apify credits so they're off unless you turn them on.
+`serve` opens a landing page: describe what you want in plain English ("2 bed 2 bath near UBC, September move-in, under $3,500") and an LLM turns it into a search, asking a quick question only if something essential is missing. Prefer knobs? There's a manual params panel too. Either way it drops you into the results dashboard, where you filter by beds, price, distance, source, and move-in window, and hit **Scrape now** (live per-source progress). The button uses the free sources; apartments.com and Zumper cost Apify credits so they're off unless you turn them on.
+
+You can also paste any address to re-center the distance filter, and search "within X km" of it.
 
 Other commands:
 
@@ -30,7 +32,7 @@ uv run housing-scraper run --skip-llm                           # skip the LLM p
 uv run housing-scraper report                                   # rebuild from saved data, no scraping
 ```
 
-Set what you're looking for (price, beds, move-in dates, area, distance center) in `criteria.yaml`.
+The plain-text search writes `criteria.yaml` for you; you can also edit that file directly (price, beds, move-in dates, areas, distance center).
 
 ## Sources
 
@@ -47,4 +49,4 @@ A 0–100 match score from beds/baths, price, and mostly **move-in date** — an
 
 Separately, a scam score flags the usual red flags: wire/gift-card payment, "landlord is overseas" stories, pushy urgency, or a price way below market. Wesbrook and liv.rent are trusted so they're rarely flagged; Craigslist is where the risk lives.
 
-Everything's saved in `data/listings.db`, so each run marks what's new and re-runs are cheap (LLM and geocoding results are cached). Listings are geocoded so you can filter by distance.
+Everything's saved in `data/listings.db` and persists across runs: new listings get a **NEW** badge, ones that disappear get marked **GONE** (greyed, not deleted). Results stream in as each source finishes, so fast ones show up right away. LLM and geocoding results are cached, so re-runs are cheap. Listings are geocoded so you can filter by distance.

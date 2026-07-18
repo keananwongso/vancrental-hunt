@@ -975,6 +975,7 @@ function wireCenter() {
       if (!res.ok) throw new Error(res.status);
       const { lat, lng } = await res.json();
       state.center = { lat, lng };
+      state.centerAddr = addr;   // remember the address so a refresh keeps it in the box
       status.innerHTML = `<span style="color:var(--accent)">✓ Centered here.</span> Distances updated.`;
       recomputeDistances();
       saveFilters();
@@ -1043,7 +1044,7 @@ function buildSources() {
 }
 
 // --- filter persistence: survive refreshes via localStorage ---
-const FILTER_KEYS = ['beds','baths','maxPrice','maxDist','winOnly','hideRisk','search','sort','sources','center'];
+const FILTER_KEYS = ['beds','baths','maxPrice','maxDist','winOnly','hideRisk','search','sort','sources','center','centerAddr'];
 function saveFilters() {
   try {
     const snap = {}; FILTER_KEYS.forEach(k => snap[k] = state[k]);
@@ -1065,6 +1066,7 @@ function loadFilters() {
     if (state.maxDist != null && isFinite(state.maxDist)) {
       $('distVal').value = state.maxDist; $('distDisplay').textContent = state.maxDist + ' km';
     }
+    if (state.centerAddr) $('centerAddr').value = state.centerAddr;  // restore the typed address
     if (state.center) recomputeDistances();   // re-apply the saved address center
     refreshChips($('beds'), 'beds'); refreshChips($('baths'), 'baths');
   } catch (_) {}
@@ -1086,6 +1088,7 @@ function wire() {
   $('reset').onclick = () => {
     state.beds = null; state.baths = null; state.winOnly = false; state.hideRisk = false; state.search = '';
     state.maxDist = Infinity; state.sort = 'score';
+    state.centerAddr = ''; $('centerAddr').value = ''; $('centerStatus').textContent = '';
     Object.keys(state.sources).forEach(id => state.sources[id] = true);
     $('search').value = ''; $('winOnly').checked = false; $('hideRisk').checked = false; $('sort').value = 'score';
     setMaxPrice(state.crit.max_price);

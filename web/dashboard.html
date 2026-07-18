@@ -1,0 +1,1129 @@
+<!DOCTYPE html>
+<!-- Serve over HTTP (fetch of listings.json fails on file://):  cd web && python3 -m http.server 5173  →  http://localhost:5173/dashboard.html -->
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Vancouver Rentals · Dashboard</title>
+<style>
+  :root {
+    --bg:          #0b0f14;
+    --bg-panel:    #10151c;
+    --bg-elev:     #141b24;
+    --bg-hover:    #18212c;
+    --border:      #212c38;
+    --border-soft: #1a232e;
+    --text:        #eef2f6;
+    --text-2:      #9fb0c0;
+    --text-3:      #64748b;
+    --accent:      #2dd4bf;
+    --accent-dim:  #14b8a6;
+    --accent-fade: rgba(45,212,191,0.12);
+    --good:        #34d399;
+    --good-fade:   rgba(52,211,153,0.12);
+    --warn:        #fbbf24;
+    --warn-fade:   rgba(251,191,36,0.12);
+    --bad:         #f87171;
+    --bad-fade:    rgba(248,113,113,0.12);
+    --radius:      6px;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Fira Code", Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; text-decoration: none; }
+  ::selection { background: var(--accent-fade); }
+
+  /* ============ LANDING ============ */
+  .landing { min-height: 100vh; display: grid; place-items: center; padding: 40px 20px;
+    background:
+      radial-gradient(90% 60% at 50% 0%, rgba(45,212,191,0.06), transparent 60%),
+      var(--bg); }
+  /* as a dismissible overlay on top of the dashboard */
+  .landing.as-overlay { position: fixed; inset: 0; z-index: 50; min-height: 0;
+    background:
+      radial-gradient(90% 60% at 50% 0%, rgba(45,212,191,0.06), transparent 60%),
+      rgba(8,11,16,0.92);
+    backdrop-filter: blur(6px); overflow-y: auto; align-content: center; }
+  .landing-close { position: fixed; top: 20px; right: 24px; z-index: 51;
+    width: 34px; height: 34px; border-radius: 8px; background: var(--bg-elev);
+    border: 1px solid var(--border); color: var(--text-2); font-size: 15px; cursor: pointer;
+    transition: color .12s, border-color .12s; }
+  .landing-close:hover { color: var(--text); border-color: var(--accent-dim); }
+  .landing-inner { width: 100%; max-width: 680px; text-align: center; }
+  .beta-pill { display: inline-block; font-size: 12px; color: var(--text-2);
+    border: 1px solid var(--border); border-radius: 99px; padding: 4px 14px; margin-bottom: 26px; }
+  .landing-title { font-size: 52px; line-height: 1.05; font-weight: 700; letter-spacing: -0.03em; margin-bottom: 18px; }
+  .landing-sub { color: var(--text-2); font-size: 15px; line-height: 1.6; max-width: 520px; margin: 0 auto 34px; }
+  .search-shell { display: flex; gap: 10px; align-items: stretch; background: var(--bg-panel);
+    border: 1px solid var(--border); border-radius: 14px; padding: 10px; transition: border-color .15s; }
+  .search-shell:focus-within { border-color: var(--accent-dim); }
+  .search-shell textarea { flex: 1; background: transparent; border: none; outline: none; resize: none;
+    color: var(--text); font-family: var(--sans); font-size: 15px; line-height: 1.5; padding: 8px 10px; }
+  .nl-go { background: linear-gradient(135deg, var(--accent), var(--accent-dim)); color: #05201c;
+    border: none; border-radius: 9px; font-weight: 650; font-size: 14px; padding: 0 22px; cursor: pointer;
+    font-family: var(--sans); transition: opacity .15s; align-self: center; height: 42px; }
+  .nl-go:hover { opacity: .9; }
+  .nl-go:disabled { opacity: .5; cursor: progress; }
+  .example-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 20px; }
+  .ex-chip { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 99px;
+    color: var(--text-2); font-size: 12.5px; padding: 7px 14px; cursor: pointer; font-family: var(--sans);
+    transition: color .12s, border-color .12s; }
+  .ex-chip:hover { color: var(--text); border-color: var(--accent-dim); }
+  .clarify { margin-top: 26px; text-align: left; background: var(--bg-panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px 20px; }
+  .clarify h4 { font-size: 14px; margin-bottom: 14px; color: var(--text); }
+  .clarify .q { margin-bottom: 14px; }
+  .clarify .q label { display: block; font-size: 13px; color: var(--text-2); margin-bottom: 6px; }
+  .clarify .q input { width: 100%; background: var(--bg-elev); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); padding: 9px 11px; font-size: 14px; font-family: var(--sans); outline: none; }
+  .clarify .q input:focus { border-color: var(--accent-dim); }
+  .parsed-box { margin-top: 22px; text-align: left; background: var(--accent-fade);
+    border: 1px solid var(--accent-dim); border-radius: 12px; padding: 16px 18px; }
+  .parsed-box .ps-sum { font-size: 14px; color: var(--text); margin-bottom: 12px; }
+  .parsed-box .ps-facts { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+  .parsed-box .ps-fact { font-family: var(--mono); font-size: 12px; color: var(--accent);
+    background: var(--bg-panel); border-radius: 6px; padding: 3px 9px; }
+  .manual-toggle { margin-top: 20px; background: none; border: none; color: var(--text-2);
+    font-size: 13px; cursor: pointer; font-family: var(--sans); }
+  .manual-toggle:hover { color: var(--accent); }
+  .manual-panel { margin-top: 18px; text-align: left; background: var(--bg-panel);
+    border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .mp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .mp-grid label { display: flex; flex-direction: column; font-size: 12px; color: var(--text-2); gap: 5px; }
+  .mp-grid label.mp-wide { grid-column: 1 / -1; }
+  .mp-grid input { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); padding: 8px 10px; font-size: 13px; font-family: var(--sans); outline: none; }
+  .mp-grid input:focus { border-color: var(--accent-dim); }
+  .landing .err-line { color: var(--bad, #f87171); font-size: 13px; margin-top: 14px; }
+  @media (max-width: 560px) { .landing-title { font-size: 38px; } }
+
+  .util-label {
+    font-size: 10.5px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-3);
+    font-weight: 600;
+  }
+  .mono { font-family: var(--mono); font-feature-settings: "tnum"; }
+
+  /* ---------- Layout ---------- */
+  .app { display: grid; grid-template-columns: 268px 1fr; min-height: 100vh; }
+
+  /* ---------- Sidebar ---------- */
+  .sidebar {
+    background: var(--bg-panel);
+    border-right: 1px solid var(--border);
+    padding: 22px 20px 40px;
+    position: sticky;
+    top: 0;
+    align-self: start;
+    height: 100vh;
+    overflow-y: auto;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .brand .dot {
+    width: 22px; height: 22px; border-radius: 6px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-dim));
+    display: grid; place-items: center; flex: none;
+    box-shadow: 0 0 0 1px rgba(45,212,191,0.3), 0 4px 12px rgba(45,212,191,0.18);
+  }
+  .brand .dot svg { width: 13px; height: 13px; }
+  .brand h1 { font-size: 15px; font-weight: 650; letter-spacing: -0.01em; }
+  .brand-sub { color: var(--text-3); font-size: 12px; margin: 2px 0 22px 32px; }
+
+  .filter-group { margin-bottom: 22px; }
+  .filter-group > .util-label { display: block; margin-bottom: 9px; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 5px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-elev);
+    color: var(--text-2);
+    cursor: pointer;
+    transition: all 0.12s ease;
+    user-select: none;
+  }
+  .chip:hover { border-color: #2e3d4d; color: var(--text); }
+  .chip.active {
+    background: var(--accent-fade);
+    border-color: var(--accent-dim);
+    color: var(--accent);
+  }
+
+  .range-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  .range-row .val { font-family: var(--mono); font-size: 13px; color: var(--accent); }
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 4px; border-radius: 4px;
+    background: var(--border); outline: none; cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 15px; height: 15px; border-radius: 50%;
+    background: var(--accent); border: 2px solid var(--bg-panel);
+    box-shadow: 0 0 0 1px var(--accent-dim);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 15px; height: 15px; border-radius: 50%; border: 2px solid var(--bg-panel);
+    background: var(--accent); box-shadow: 0 0 0 1px var(--accent-dim);
+  }
+
+  .search-box { position: relative; }
+  .search-box svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; color: var(--text-3); }
+  input[type="text"] {
+    width: 100%;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    padding: 8px 10px 8px 30px;
+    font-size: 13px;
+    font-family: var(--sans);
+    outline: none;
+    transition: border-color 0.12s;
+  }
+  input[type="text"]:focus { border-color: var(--accent-dim); }
+  input[type="text"]::placeholder { color: var(--text-3); }
+
+  /* toggle */
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 3px 0; cursor: pointer; }
+  .toggle-row .lbl { font-size: 13px; color: var(--text); }
+  .toggle-row .sub { font-size: 11px; color: var(--text-3); }
+  .switch { position: relative; width: 34px; height: 19px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute; inset: 0; border-radius: 20px;
+    background: var(--border); transition: 0.15s; cursor: pointer;
+  }
+  .slider::before {
+    content: ""; position: absolute; height: 13px; width: 13px; left: 3px; top: 3px;
+    background: var(--text-2); border-radius: 50%; transition: 0.15s;
+  }
+  .switch input:checked + .slider { background: var(--accent-fade); }
+  .switch input:checked + .slider::before { transform: translateX(15px); background: var(--accent); }
+
+  /* checkbox source */
+  .check-row { display: flex; align-items: center; gap: 9px; padding: 5px 0; cursor: pointer; user-select: none; }
+  .check-row.disabled { cursor: not-allowed; opacity: 0.45; }
+  .check-box {
+    width: 16px; height: 16px; border-radius: 4px; flex: none;
+    border: 1px solid var(--border); background: var(--bg-elev);
+    display: grid; place-items: center; transition: 0.12s;
+  }
+  .check-row.checked .check-box { background: var(--accent); border-color: var(--accent); }
+  .check-box svg { width: 10px; height: 10px; color: var(--bg); opacity: 0; }
+  .check-row.checked .check-box svg { opacity: 1; }
+  .check-row .name { font-size: 13px; color: var(--text-2); }
+  .check-row.checked .name { color: var(--text); }
+  .soon { font-size: 9.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-3); border: 1px solid var(--border); padding: 1px 5px; border-radius: 4px; margin-left: auto; }
+  .src-count { font-size: 11px; color: var(--text-3); margin-left: auto; }
+
+  .reset-btn {
+    width: 100%; margin-top: 4px; padding: 8px;
+    background: transparent; border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--text-2); font-size: 12px; cursor: pointer; transition: 0.12s; font-family: var(--sans);
+  }
+  .reset-btn:hover { border-color: #2e3d4d; color: var(--text); }
+
+  /* ---------- Main ---------- */
+  .main { padding: 22px 30px 60px; min-width: 0; }
+
+  .topbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 20px; flex-wrap: wrap; }
+  .topbar .headline h2 { font-size: 26px; font-weight: 680; letter-spacing: -0.02em; }
+  .topbar .headline p { color: var(--text-2); font-size: 13px; margin-top: 4px; }
+  .topbar .headline .crit { color: var(--accent); }
+
+  .topbar-right { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .refresh-wrap { display: flex; flex-direction: column; gap: 3px; }
+  .refresh-wrap .refreshed { font-size: 13px; color: var(--text-2); }
+  .scrape-btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: var(--accent-fade); border: 1px solid var(--accent-dim); border-radius: var(--radius);
+    color: var(--accent); padding: 8px 14px; font-size: 13px; font-weight: 600; font-family: var(--sans);
+    cursor: pointer; transition: background .15s, opacity .15s;
+  }
+  .scrape-btn:hover { background: rgba(45,212,191,0.2); }
+  .scrape-btn svg { width: 15px; height: 15px; }
+  .scrape-btn.busy { opacity: .7; cursor: progress; }
+  .scrape-btn.busy svg { animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  /* ---- scrape run: multi-agent tile grid ---- */
+  .scrape-run { margin-bottom: 22px; }
+  .scrape-run .run-head {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
+    font-size: 13px; color: var(--text-2);
+  }
+  .scrape-run .run-head .stage { color: var(--text); font-weight: 600; }
+  .scrape-run .run-head .run-clock {
+    margin-left: auto; color: var(--text-2); font-size: 12px;
+    background: var(--bg-elev); border: 1px solid var(--border); border-radius: 5px; padding: 2px 8px;
+  }
+  .scrape-run .run-head .spark {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+    box-shadow: 0 0 0 0 var(--accent-fade); animation: pulse 1.4s ease-out infinite;
+  }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(45,212,191,.5); } 100% { box-shadow: 0 0 0 9px rgba(45,212,191,0); } }
+  .agent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+  .agent {
+    background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 13px; position: relative; overflow: hidden; transition: border-color .25s, background .25s;
+  }
+  .agent::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: var(--border); transition: background .25s;
+  }
+  .agent.running::before { background: var(--accent); }
+  .agent.done::before { background: var(--good, #34d399); }
+  .agent.error::before { background: var(--bad, #f87171); }
+  .agent.running { border-color: var(--accent-dim); }
+  .agent .a-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+  .agent .a-name { font-size: 13px; font-weight: 600; color: var(--text); }
+  .agent .a-method { font-size: 10px; color: var(--text-3); font-family: var(--mono); }
+  .agent .a-state {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-family: var(--mono);
+    text-transform: uppercase; letter-spacing: .04em; color: var(--text-2);
+  }
+  .agent .a-time { margin-left: auto; color: var(--text-3); text-transform: none; letter-spacing: 0; font-size: 10.5px; }
+  .agent.running .a-state { color: var(--accent); }
+  .agent.done .a-state { color: var(--good, #34d399); }
+  .agent.error .a-state { color: var(--bad, #f87171); }
+  .agent .dot-spin { width: 11px; height: 11px; }
+  .agent.running .dot-spin { animation: spin .9s linear infinite; }
+  .agent .a-count { font-family: var(--mono); font-size: 22px; font-weight: 600; letter-spacing: -.02em; color: var(--text); line-height: 1; }
+  .agent .a-count .sub { font-size: 12px; color: var(--text-3); font-weight: 400; }
+  .agent .a-bar { height: 3px; background: var(--bg-elev); border-radius: 2px; margin-top: 9px; overflow: hidden; }
+  .agent .a-bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s ease; }
+  .agent .a-err { font-size: 11px; color: var(--bad, #f87171); margin-top: 6px; font-family: var(--mono); }
+
+  .sort-wrap { display: flex; align-items: center; gap: 8px; }
+  select {
+    background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--text); padding: 7px 30px 7px 11px; font-size: 13px; font-family: var(--sans);
+    outline: none; cursor: pointer; appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%239fb0c0' stroke-width='2'><path d='M3 5l3 3 3-3'/></svg>");
+    background-repeat: no-repeat; background-position: right 10px center;
+  }
+  select:focus { border-color: var(--accent-dim); }
+
+  /* summary stats */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+  .stat {
+    background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px; position: relative; overflow: hidden;
+  }
+  .stat .num { font-family: var(--mono); font-size: 26px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; }
+  .stat .lbl { margin-top: 4px; }
+  .stat.accent .num { color: var(--accent); }
+  .stat.good .num { color: var(--good); }
+  .stat.warn .num { color: var(--warn); }
+  .stat .num .sub { color: var(--text-3); font-size: 14px; font-weight: 400; }
+
+  /* grid */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)); gap: 14px; }
+
+  .card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    padding: 16px 16px 14px;
+    display: flex; flex-direction: column; gap: 12px;
+    transition: border-color 0.14s, transform 0.14s, box-shadow 0.14s;
+    position: relative;
+  }
+  .card:hover { border-color: #2b3947; transform: translateY(-2px); box-shadow: 0 10px 30px -12px rgba(0,0,0,0.6); }
+  /* hero: sept-window + strong match */
+  .card.hero {
+    border-color: rgba(45,212,191,0.35);
+    background:
+      radial-gradient(120% 100% at 100% 0%, rgba(45,212,191,0.07), transparent 55%),
+      var(--bg-panel);
+  }
+  .card.hero::before {
+    content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 2px;
+    background: linear-gradient(var(--accent), var(--accent-dim)); border-radius: 2px;
+  }
+  .card.gone { opacity: 0.5; }
+  .card.gone .title { text-decoration: line-through; }
+  .tag-new, .tag-gone {
+    display: inline-block; font-size: 9.5px; font-weight: 700; letter-spacing: .05em;
+    padding: 1px 5px; border-radius: 4px; margin-right: 6px; vertical-align: 1px;
+  }
+  .tag-new { background: var(--accent-fade); color: var(--accent); border: 1px solid var(--accent-dim); }
+  .tag-gone { background: rgba(248,113,113,0.12); color: var(--bad, #f87171); border: 1px solid var(--bad, #f87171); }
+
+  .card-top { display: flex; gap: 13px; align-items: flex-start; }
+
+  /* match ring */
+  .ring { --p: 0; position: relative; width: 46px; height: 46px; flex: none; }
+  .ring svg { transform: rotate(-90deg); }
+  .ring .track { stroke: var(--border); }
+  .ring .fill { stroke: var(--accent); stroke-linecap: round; transition: stroke-dashoffset 0.4s ease; }
+  .ring .txt {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--text);
+  }
+  .ring.r-hi .fill { stroke: var(--accent); }
+  .ring.r-mid .fill { stroke: var(--warn); }
+  .ring.r-lo .fill { stroke: var(--text-3); }
+
+  .card-head { min-width: 0; flex: 1; }
+  .card-head .title {
+    font-size: 13.5px; font-weight: 560; line-height: 1.35; color: var(--text);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .card-head .title:hover { color: var(--accent); }
+  .card-head .title .ext { display: inline-block; width: 11px; height: 11px; margin-left: 3px; opacity: 0.55; vertical-align: -1px; }
+  .card-head .area { color: var(--text-2); font-size: 12px; margin-top: 4px; display: flex; align-items: center; gap: 5px; }
+  .card-head .area svg { width: 11px; height: 11px; flex: none; color: var(--text-3); }
+
+  .price-row { display: flex; align-items: baseline; justify-content: space-between; }
+  .price { font-family: var(--mono); font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+  .price .mo { font-size: 12px; color: var(--text-3); font-weight: 400; }
+  .price.over { color: var(--bad); }
+  .price.over .mo { color: var(--bad); }
+  .over-tag { font-size: 10px; color: var(--bad); background: var(--bad-fade); padding: 2px 6px; border-radius: 4px; font-weight: 600; }
+
+  .specs { display: flex; gap: 14px; padding: 10px 0; border-top: 1px solid var(--border-soft); border-bottom: 1px solid var(--border-soft); }
+  .spec { display: flex; flex-direction: column; gap: 1px; }
+  .spec .v { font-family: var(--mono); font-size: 13.5px; color: var(--text); }
+  .spec .k { font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
+
+  .movein { display: flex; align-items: center; gap: 7px; font-size: 12.5px; }
+  .movein svg { width: 13px; height: 13px; flex: none; }
+  .movein.win { color: var(--good); }
+  .movein.win svg { color: var(--good); }
+  .movein.norm { color: var(--text-2); }
+  .movein.unk { color: var(--text-3); font-style: italic; }
+  .win-pill { margin-left: auto; font-size: 9.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--good); background: var(--good-fade); padding: 2px 7px; border-radius: 20px; }
+
+  .footer-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .badge {
+    font-size: 10.5px; padding: 3px 8px; border-radius: 5px; font-weight: 600;
+    display: inline-flex; align-items: center; gap: 4px; letter-spacing: 0.02em;
+    border: 1px solid transparent;
+  }
+  .badge .bdot { width: 5px; height: 5px; border-radius: 50%; }
+  .badge.src { background: var(--bg-elev); color: var(--text-2); border-color: var(--border); text-transform: capitalize; }
+  .badge.scam-low  { color: var(--good); background: var(--good-fade); }
+  .badge.scam-low  .bdot { background: var(--good); }
+  .badge.scam-medium { color: var(--warn); background: var(--warn-fade); }
+  .badge.scam-medium .bdot { background: var(--warn); }
+  .badge.scam-high { color: var(--bad); background: var(--bad-fade); }
+  .badge.scam-high .bdot { background: var(--bad); }
+  .badge.scam-medium, .badge.scam-high { cursor: help; }
+  .badge.pill { background: var(--bg-elev); color: var(--text-2); border-color: var(--border); }
+  .badge.pill svg { width: 11px; height: 11px; }
+
+  /* empty */
+  .empty { text-align: center; padding: 80px 20px; color: var(--text-3); }
+  .empty svg { width: 40px; height: 40px; opacity: 0.4; margin-bottom: 14px; }
+  .empty h3 { color: var(--text-2); font-size: 15px; font-weight: 550; margin-bottom: 6px; }
+  .empty p { font-size: 13px; }
+
+  @media (max-width: 820px) {
+    .app { grid-template-columns: 1fr; }
+    .sidebar { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--border); }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar">
+    <div class="brand" id="homeBrand" style="cursor:pointer" title="New search">
+      <span class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="#0b0f14" stroke-width="2.4"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg></span>
+      <h1>Rentfinder</h1>
+    </div>
+    <div class="brand-sub">New search ↑</div>
+
+    <div class="filter-group">
+      <span class="util-label">Search</span>
+      <div class="search-box">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+        <input type="text" id="search" placeholder="Title or area…" autocomplete="off" />
+      </div>
+    </div>
+
+    <div class="filter-group">
+      <span class="util-label">Bedrooms</span>
+      <div class="chips" id="beds"></div>
+    </div>
+
+    <div class="filter-group">
+      <span class="util-label">Bathrooms</span>
+      <div class="chips" id="baths"></div>
+    </div>
+
+    <div class="filter-group">
+      <span class="util-label">Max price</span>
+      <div class="range-row">
+        <span class="util-label" style="text-transform:none;letter-spacing:0">Up to</span>
+        <span class="val mono" id="priceVal">$8,600</span>
+      </div>
+      <input type="range" id="price" min="770" max="8600" step="10" value="8600" />
+    </div>
+
+    <div class="filter-group">
+      <span class="util-label">Move-in</span>
+      <label class="toggle-row">
+        <span>
+          <span class="lbl">September window only</span><br>
+          <span class="sub">Aug 18 – Sep 15 move-in</span>
+        </span>
+        <span class="switch"><input type="checkbox" id="winOnly"><span class="slider"></span></span>
+      </label>
+    </div>
+
+    <div class="filter-group">
+      <span class="util-label">Sources</span>
+      <div id="sources"></div>
+    </div>
+
+    <div class="filter-group">
+      <span class="util-label">Safety</span>
+      <label class="toggle-row">
+        <span>
+          <span class="lbl">Hide high-risk</span><br>
+          <span class="sub">Filter out sketchy listings</span>
+        </span>
+        <span class="switch"><input type="checkbox" id="hideRisk"><span class="slider"></span></span>
+      </label>
+    </div>
+
+    <div class="filter-group" id="distGroup" hidden>
+      <span class="util-label">Distance from an address</span>
+      <div class="addr-box">
+        <input type="text" id="centerAddr" placeholder="Paste an address to center on…" autocomplete="off"
+               style="width:100%;background:var(--bg-elev);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);padding:8px 10px;font-size:13px;font-family:var(--sans);outline:none;transition:border-color 0.12s;" />
+        <button id="centerGo" class="reset-btn" style="margin-top:6px;width:100%;">Set center</button>
+        <div id="centerStatus" class="sub" style="margin-top:5px;color:var(--text-3);font-size:11px;min-height:14px;"></div>
+      </div>
+      <div class="range-row" style="margin-top:10px;">
+        <span class="util-label" style="text-transform:none;letter-spacing:0">Within</span>
+        <span class="val mono" id="distDisplay">any</span>
+      </div>
+      <input type="number" id="distVal" min="0" step="0.5" placeholder="e.g. 5 (km)"
+             style="width:100%;background:var(--bg-elev);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);padding:8px 10px;font-size:13px;font-family:var(--sans);outline:none;transition:border-color 0.12s;" />
+    </div>
+
+    <button class="reset-btn" id="reset">Reset all filters</button>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="main">
+    <div class="topbar">
+      <div class="headline">
+        <h2>Rental listings</h2>
+        <p>Target: <span class="crit mono" id="critText"></span></p>
+      </div>
+      <div class="topbar-right">
+        <div class="refresh-wrap">
+          <span class="util-label">Last refreshed</span>
+          <span class="refreshed mono" id="lastRefreshed">—</span>
+        </div>
+        <button class="scrape-btn" id="scrape">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-2.6-6.4"/><path d="M21 4v5h-5"/></svg>
+          <span id="scrapeLabel">Scrape now</span>
+        </button>
+        <div class="sort-wrap">
+          <span class="util-label">Sort</span>
+          <select id="sort">
+            <option value="score">Match score</option>
+            <option value="priceAsc">Price · low to high</option>
+            <option value="priceDesc">Price · high to low</option>
+            <option value="distAsc">Distance · nearest first</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="scrape-run" id="scrapeRun" hidden>
+      <div class="run-head"><span class="spark"></span><span class="stage" id="runStage">Starting scrape…</span><span class="run-clock mono" id="runClock">0s</span></div>
+      <div class="agent-grid" id="agentGrid"></div>
+    </div>
+
+    <div class="stats">
+      <div class="stat">
+        <div class="num mono" id="sShown">0<span class="sub"> / 0</span></div>
+        <div class="lbl util-label">Listings shown</div>
+      </div>
+      <div class="stat good">
+        <div class="num mono" id="sWindow">0</div>
+        <div class="lbl util-label">In Sept window</div>
+      </div>
+      <div class="stat accent">
+        <div class="num mono" id="sMatch">0</div>
+        <div class="lbl util-label">Strong match ≥80</div>
+      </div>
+      <div class="stat warn">
+        <div class="num mono" id="sRisk">0</div>
+        <div class="lbl util-label">Flagged sketchy</div>
+      </div>
+    </div>
+
+    <div class="grid" id="grid"></div>
+  </main>
+</div>
+
+<script>
+window.addEventListener('error', e => {
+  const bar = document.getElementById('jsErrBar') || (() => {
+    const d = document.createElement('div'); d.id = 'jsErrBar';
+    d.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:999;background:#7f1d1d;color:#fff;font:12px monospace;padding:8px 12px;';
+    document.body.appendChild(d); return d;
+  })();
+  bar.textContent = 'JS error: ' + (e.message || e.error) + '  @ ' + (e.filename||'').split('/').pop() + ':' + e.lineno;
+});
+window.addEventListener('unhandledrejection', e => {
+  const bar = document.getElementById('jsErrBar') || document.body.appendChild(Object.assign(document.createElement('div'),{id:'jsErrBar'}));
+  bar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:999;background:#7f1d1d;color:#fff;font:12px monospace;padding:8px 12px;';
+  bar.textContent = 'Promise error: ' + (e.reason && e.reason.message || e.reason);
+});
+
+const CURRENCY = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+const money = n => CURRENCY.format(n);
+const bn = n => (n === null || n === undefined) ? '—' : (Number.isInteger(n) ? n : n.toFixed(1));
+
+const state = {
+  data: null, crit: null,
+  beds: null, baths: null, maxPrice: Infinity, maxDist: Infinity,
+  winOnly: false, hideRisk: false, search: '',
+  sources: { livrent: true, wesbrook: true },
+  sort: 'score',
+  useApify: false,
+  center: null,        // {lat,lng} — set by pasting an address; recomputes dist_km
+};
+
+const $ = id => document.getElementById(id);
+
+// great-circle distance in km — used to recompute distances against a pasted center
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const R = 6371, toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// recompute every listing's dist_km against the current center (if set + geocoded)
+function recomputeDistances() {
+  if (!state.center || !state.data) return;
+  for (const l of state.data.listings) {
+    l.dist_km = (l.lat != null && l.lng != null)
+      ? Math.round(haversineKm(state.center.lat, state.center.lng, l.lat, l.lng) * 100) / 100
+      : null;
+  }
+}
+
+const ICON = {
+  ext:  '<svg class="ext" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5h10v10"/><path d="M19 5L8 16"/><path d="M15 19H5V9"/></svg>',
+  pin:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-6.6 7-12a7 7 0 10-14 0c0 5.4 7 12 7 12z"/><circle cx="12" cy="9" r="2.4"/></svg>',
+  cal:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5L20 6"/></svg>',
+  paw:  '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="6.5" cy="10" r="1.8"/><circle cx="17.5" cy="10" r="1.8"/><circle cx="9.5" cy="6.5" r="1.8"/><circle cx="14.5" cy="6.5" r="1.8"/><path d="M12 12c-2.5 0-4.5 2-4.5 4 0 1.7 1.4 2.6 3 2.6.8 0 1-.3 1.5-.3s.7.3 1.5.3c1.6 0 3-.9 3-2.6 0-2-2-4-4.5-4z"/></svg>',
+  sofa: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 11V8a2 2 0 012-2h12a2 2 0 012 2v3"/><path d="M2 13a2 2 0 012 2v3h16v-3a2 2 0 114 0"/><path d="M2 13a2 2 0 114 0v2h12v-2a2 2 0 114 0"/><path d="M5 18v2M19 18v2"/></svg>',
+};
+
+/* ---------- init ---------- */
+// Empty defaults so a fresh clone (no listings.json yet) still boots with a
+// working sidebar + Scrape button, instead of showing a scary error.
+const EMPTY_DATA = {
+  generated: null,
+  criteria: { beds: 2, baths: 2, max_price: 3500,
+              move_in_start: null, move_in_end: null, location: null },
+  listings: [],
+};
+
+
+/* ---------- init ---------- */
+fetch('listings.json')
+  .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+  .then(json => { state.data = json; state.crit = json.criteria; boot(); })
+  .catch(() => {
+    // No data yet (first run) — boot empty so the user can hit "Scrape now".
+    state.data = EMPTY_DATA; state.crit = EMPTY_DATA.criteria; boot();
+  });
+
+function boot() {
+  const c = state.crit;
+  state.maxPrice = c.max_price;                 // start slider at criteria budget
+  $('price').value = c.max_price;
+  $('priceVal').textContent = money(c.max_price);
+  $('critText').textContent = `${bn(c.beds)} bed · ${bn(c.baths)} bath · ≤${money(c.max_price)} · Sep 1 ±2wk`;
+  $('lastRefreshed').textContent = state.data.generated || '—';
+
+  buildChips('beds', [0,1,2,3,4], 'beds', c.beds);
+  buildChips('baths', [0,1,1.5,2,2.5,3,3.5], 'baths', c.baths);
+  buildSources();
+  $('distGroup').hidden = false;             // address-based distance always available
+  // default center: criteria.location if present, else the geocoded listings' data
+  if (c.location) state.center = { lat: c.location.lat, lng: c.location.lng };
+  wire();
+  wireScrape();
+  wireCenter();
+
+  // "New search" — the brand in the sidebar returns to the landing page.
+  $('homeBrand').onclick = () => { window.location.href = 'index.html?new=1'; };
+
+  render();
+
+  // Arriving from a search (index.html → dashboard.html?scrape=1): auto-trigger
+  // the scrape so fresh listings stream in immediately. Reuses the Scrape button's
+  // own handler for identical behavior.
+  if (new URLSearchParams(location.search).get('scrape') === '1') {
+    $('scrape').click();
+  }
+}
+
+/* ---------- scrape trigger — renders a multi-agent tile grid from the server's JSON event stream ---------- */
+const SRC_LABEL = { livrent: 'liv.rent', wesbrook: 'Wesbrook', craigslist: 'Craigslist',
+                    apartments_com: 'apartments.com', zumper: 'Zumper' };
+const STATE_LABEL = { queued: 'Queued', fetching: 'Fetching', normalizing: 'Extracting',
+                      done: 'Done', error: 'Failed', timeout: 'Timed out' };
+
+function wireScrape() {
+  const btn = $('scrape'), label = $('scrapeLabel'), run = $('scrapeRun'),
+        grid = $('agentGrid'), stage = $('runStage'), clock = $('runClock');
+  const spinSvg = '<svg class="dot-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 11-6.2-8.5" stroke-linecap="round"/></svg>';
+  const tiles = {};
+  let ticker = null;          // per-tile elapsed clock (client-side, independent of server)
+  const fmt = s => s < 60 ? s.toFixed(0) + 's' : Math.floor(s/60) + 'm ' + Math.round(s%60) + 's';
+
+  const startTicker = () => {
+    const t0 = performance.now();
+    stopTicker();
+    ticker = setInterval(() => {
+      const overall = (performance.now() - t0) / 1000;
+      clock.textContent = fmt(overall);
+      // update each running tile's own elapsed clock
+      Object.values(tiles).forEach(el => {
+        if (el.classList.contains('running') && el._start != null) {
+          el.querySelector('.a-time').textContent = fmt((performance.now() - el._start) / 1000);
+        }
+      });
+    }, 250);
+  };
+  const stopTicker = () => { if (ticker) { clearInterval(ticker); ticker = null; } };
+
+  const tile = (id, method) => {
+    const el = document.createElement('div');
+    el.className = 'agent queued';
+    el.innerHTML =
+      `<div class="a-top"><span class="a-name">${SRC_LABEL[id] || id}</span><span class="a-method">${method || ''}</span></div>
+       <div class="a-state"><span class="ico"></span><span class="txt">Queued</span><span class="a-time mono"></span></div>
+       <div class="a-count" hidden><span class="n">0</span><span class="sub"> listings</span></div>
+       <div class="a-bar" hidden><i></i></div>
+       <div class="a-err" hidden></div>`;
+    grid.appendChild(el);
+    return el;
+  };
+
+  const update = (ev) => {
+    const el = tiles[ev.id]; if (!el) return;
+    const running = ev.status === 'fetching' || ev.status === 'normalizing';
+    const terminalOk = ev.status === 'done';
+    const terminalBad = ev.status === 'error' || ev.status === 'timeout';
+    el.className = 'agent ' + (terminalOk ? 'done' : terminalBad ? 'error' : 'running');
+    if (ev.status === 'fetching' && el._start == null) el._start = performance.now();
+    el.querySelector('.a-state .txt').textContent = STATE_LABEL[ev.status] || ev.status;
+    el.querySelector('.a-state .ico').innerHTML =
+      running ? spinSvg : terminalOk ? '✓' : terminalBad ? '✕' : '';
+    const timeEl = el.querySelector('.a-time');
+    if (terminalOk && ev.took != null) timeEl.textContent = fmt(ev.took) + (ev.kept != null ? ` · ${ev.kept} kept` : '');
+    else if (terminalBad) timeEl.textContent = '';
+    const cnt = el.querySelector('.a-count'), bar = el.querySelector('.a-bar');
+    if (ev.status === 'fetching' && ev.fetch_total) {
+      // live "downloading 45/170" so the slow fetch phase doesn't look frozen
+      cnt.hidden = false;
+      el.querySelector('.a-count .n').textContent = ev.fetched || 0;
+      el.querySelector('.a-count .sub').textContent = ` / ${ev.fetch_total} listings`;
+      bar.hidden = false;
+      bar.querySelector('i').style.width = Math.round(100 * (ev.fetched || 0) / ev.fetch_total) + '%';
+    } else if (ev.found != null) {
+      cnt.hidden = false;
+      el.querySelector('.a-count .n').textContent = ev.status === 'normalizing' && ev.done != null ? ev.done : ev.found;
+      el.querySelector('.a-count .sub').textContent = ev.status === 'normalizing'
+        ? ` / ${ev.found} extracted` : ' listings';
+    }
+    if (ev.status === 'normalizing' && ev.found) {
+      bar.hidden = false; bar.querySelector('i').style.width = Math.round(100 * (ev.done || 0) / ev.found) + '%';
+    } else if (terminalOk || terminalBad) {
+      bar.hidden = true;
+    }
+    if (terminalBad) {
+      const e = el.querySelector('.a-err'); e.hidden = false;
+      e.textContent = ev.error || (ev.status === 'timeout' ? 'timed out' : 'failed');
+    }
+  };
+
+  const finishRun = (summaryHtml) => {
+    stopTicker();
+    btn.classList.remove('busy');
+    label.textContent = 'Scrape now';
+    if (summaryHtml) stage.innerHTML = summaryHtml;
+    // any tile still "running" when the run ends never got a terminal event — flag it
+    Object.entries(tiles).forEach(([id, el]) => {
+      if (el.classList.contains('running')) {
+        el.className = 'agent error';
+        el.querySelector('.a-state .txt').textContent = 'Interrupted';
+        el.querySelector('.a-state .ico').textContent = '✕';
+        const e = el.querySelector('.a-err'); e.hidden = false; e.textContent = 'run ended before this finished';
+      }
+    });
+  };
+
+  btn.addEventListener('click', async () => {
+    if (btn.classList.contains('busy')) return;
+    btn.classList.add('busy');
+    label.textContent = 'Scraping…';
+    run.hidden = false; grid.innerHTML = ''; stage.textContent = 'Starting scrape…';
+    clock.textContent = '0s';
+    for (const k in tiles) delete tiles[k];
+    // Fresh run: clear the current results so listings stream in live from zero.
+    state.data = { ...(state.data || {}), listings: [], criteria: state.crit || (state.data && state.data.criteria) };
+    render();
+    startTicker();
+    let lastBeat = performance.now();
+    let sawComplete = false;
+    let staleWarned = false;
+    // Watchdog: the server heartbeats every 2s. If we go 30s with nothing, warn —
+    // but DON'T kill the run; if messages resume, clear the warning and carry on.
+    const watchdog = setInterval(() => {
+      const silent = performance.now() - lastBeat;
+      if (silent > 30000 && !staleWarned) {
+        staleWarned = true;
+        stage.innerHTML = '<span style="color:var(--warn,#b58900)">No response for 30s — server may be stuck. It will still try to finish; check the terminal if this persists.</span>';
+      } else if (silent < 5000 && staleWarned) {
+        staleWarned = false;  // recovered
+      }
+    }, 3000);
+    try {
+      const url = state.useApify ? '/scrape?apify=1' : '/scrape';
+      const res = await fetch(url, { method: 'POST' });
+      if (!res.ok || !res.body) throw new Error('server returned ' + res.status);
+      const reader = res.body.getReader(), dec = new TextDecoder();
+      let buf = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        lastBeat = performance.now();
+        buf += dec.decode(value, { stream: true });
+        const parts = buf.split('\n'); buf = parts.pop();
+        for (const p of parts) {
+          if (!p.trim()) continue;
+          let ev; try { ev = JSON.parse(p); } catch { continue; }
+          if (ev.type === 'plan') {
+            ev.sources.forEach(s => { tiles[s.id] = tile(s.id, s.method); });
+            if (!ev.sources.length) stage.textContent = 'No sources enabled.';
+          } else if (ev.type === 'source') {
+            update(ev);
+          } else if (ev.type === 'listings') {
+            // a source finished — merge its listings by id (replace dupes) and show now
+            const byId = new Map(state.data.listings.map(l => [l.id, l]));
+            ev.items.forEach(it => byId.set(it.id, it));
+            state.data.listings = [...byId.values()];
+            buildSources();
+            recomputeDistances();
+            render();
+          } else if (ev.type === 'heartbeat') {
+            // keep-alive; ticker already shows elapsed. Nothing to render.
+          } else if (ev.type === 'stage') {
+            stage.textContent = ev.text;
+          } else if (ev.type === 'note') {
+            stage.textContent = ev.text;
+          } else if (ev.type === 'failed') {
+            sawComplete = true;
+            finishRun(`<span style="color:var(--bad)">Scrape failed: ${ev.error || 'unknown error'}</span>`);
+          } else if (ev.type === 'complete') {
+            sawComplete = true;
+            const bad = (ev.sources || []).filter(s => s.status === 'error' || s.status === 'timeout');
+            const warn = bad.length ? ` · <span style="color:var(--warn,#b58900)">${bad.length} source(s) failed</span>` : '';
+            finishRun(`<span style="color:var(--good)">✓ Done in ${fmt(ev.elapsed || 0)}</span> · ${ev.total} scraped · ${ev.shown} match your filters${warn}`);
+          }
+        }
+      }
+      clearInterval(watchdog);
+      // Always reload listings.json at the end. Even if we never saw a clean
+      // "complete" (stream stalled/dropped), the server writes the file before
+      // finishing, so we still pick up whatever it produced.
+      let fresh = null;
+      try {
+        fresh = await fetch('listings.json?t=' + Date.now()).then(r => r.json());
+      } catch (_) {}
+      if (fresh) {
+        state.data = fresh; state.crit = fresh.criteria;
+        $('lastRefreshed').textContent = fresh.generated || '—';
+        buildSources();
+        recomputeDistances();
+        render();
+      }
+      if (!sawComplete) {
+        finishRun(fresh
+          ? '<span style="color:var(--warn,#b58900)">Stream ended early, but the latest data was reloaded.</span>'
+          : '<span style="color:var(--bad)">Scrape ended without producing data. Check the terminal.</span>');
+      }
+    } catch (err) {
+      clearInterval(watchdog);
+      run.hidden = false;
+      finishRun(`<span style="color:var(--bad)">Error: ${err.message}. Start the server with </span><code>uv run housing-scraper serve</code>`);
+    }
+  });
+}
+
+// Paste an address → geocode via the server → re-center distance calc.
+function wireCenter() {
+  const input = $('centerAddr'), btn = $('centerGo'), status = $('centerStatus');
+  const go = async () => {
+    const addr = input.value.trim();
+    if (!addr) return;
+    status.textContent = 'Locating…';
+    try {
+      const res = await fetch('/geocode?q=' + encodeURIComponent(addr), { method: 'POST' });
+      if (res.status === 404) { status.textContent = 'Address not found — try adding city/postal code.'; return; }
+      if (!res.ok) throw new Error(res.status);
+      const { lat, lng } = await res.json();
+      state.center = { lat, lng };
+      status.innerHTML = `<span style="color:var(--accent)">✓ Centered here.</span> Distances updated.`;
+      recomputeDistances();
+      render();
+    } catch (e) {
+      status.textContent = 'Lookup failed — is the server running?';
+    }
+  };
+  btn.onclick = go;
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+}
+
+function buildChips(containerId, values, key, preselect) {
+  const el = $(containerId);
+  el.innerHTML = '';
+  const mk = (label, val) => {
+    const c = document.createElement('div');
+    c.className = 'chip' + (state[key] === val ? ' active' : '');
+    c.textContent = label;
+    c.onclick = () => { state[key] = (state[key] === val) ? null : val; refreshChips(el, key); render(); };
+    c._val = val;
+    el.appendChild(c);
+  };
+  mk('Any', null);
+  values.forEach(v => mk(bn(v) + (v === 4 ? '+' : ''), v));
+  // default: leave "Any" (null) selected so all listings show; criteria highlighted in header
+  refreshChips(el, key);
+}
+function refreshChips(el, key) {
+  [...el.children].forEach(ch => ch.classList.toggle('active', state[key] === ch._val));
+}
+
+// display names for source ids; any id present in the data becomes an active filter
+const SOURCE_NAMES = {
+  livrent: 'liv.rent',
+  wesbrook: 'Wesbrook Properties',
+  craigslist: 'Craigslist',
+  apartments_com: 'apartments.com',
+  zumper: 'Zumper',
+};
+// sources not yet built into the scraper — shown greyed as "soon"
+const SOON_SOURCES = ['apartments.com', 'Kijiji', 'Facebook Marketplace'];
+
+function buildSources() {
+  const el = $('sources');
+  el.innerHTML = '';
+  const present = [...new Set(state.data.listings.map(l => l.source))].sort();
+  const prev = state.sources || {};
+  state.sources = {};
+  present.forEach(id => {
+    state.sources[id] = id in prev ? prev[id] : true;  // keep user's toggle across live updates
+    const count = state.data.listings.filter(l => l.source === id).length;
+    const on = state.sources[id];
+    const row = document.createElement('div');
+    row.className = 'check-row' + (on ? ' checked' : '');
+    row.innerHTML = `<span class="check-box">${on ? ICON.check : ''}</span><span class="name">${SOURCE_NAMES[id] || id}</span><span class="src-count mono">${count}</span>`;
+    row.onclick = () => { state.sources[id] = !state.sources[id]; row.classList.toggle('checked', state.sources[id]); render(); };
+    el.appendChild(row);
+  });
+  SOON_SOURCES.forEach(n => {
+    const row = document.createElement('div');
+    row.className = 'check-row disabled';
+    row.innerHTML = `<span class="check-box"></span><span class="name">${n}</span><span class="soon">soon</span>`;
+    el.appendChild(row);
+  });
+}
+
+function wire() {
+  $('search').oninput = e => { state.search = e.target.value.toLowerCase().trim(); render(); };
+  $('price').oninput = e => { state.maxPrice = +e.target.value; $('priceVal').textContent = money(+e.target.value); render(); };
+  $('winOnly').onchange = e => { state.winOnly = e.target.checked; render(); };
+  $('hideRisk').onchange = e => { state.hideRisk = e.target.checked; render(); };
+  $('sort').onchange = e => { state.sort = e.target.value; render(); };
+  $('distVal').oninput = e => {
+    const v = parseFloat(e.target.value);
+    state.maxDist = isNaN(v) || v <= 0 ? Infinity : v;
+    $('distDisplay').textContent = isFinite(state.maxDist) ? state.maxDist + ' km' : 'any';
+    render();
+  };
+  $('reset').onclick = () => {
+    state.beds = null; state.baths = null; state.winOnly = false; state.hideRisk = false; state.search = '';
+    state.maxPrice = state.crit.max_price; state.maxDist = Infinity; state.sort = 'score';
+    Object.keys(state.sources).forEach(id => state.sources[id] = true);
+    $('search').value = ''; $('winOnly').checked = false; $('hideRisk').checked = false; $('sort').value = 'score';
+    $('price').value = state.crit.max_price; $('priceVal').textContent = money(state.crit.max_price);
+    $('distVal').value = ''; $('distDisplay').textContent = 'any';
+    refreshChips($('beds'), 'beds'); refreshChips($('baths'), 'baths');
+    [...$('sources').querySelectorAll('.check-row:not(.disabled)')].forEach(r => r.classList.add('checked'));
+    render();
+  };
+}
+
+/* ---------- filter + sort ---------- */
+function filtered() {
+  return state.data.listings.filter(l => {
+    if (state.beds !== null) { if (state.beds === 4 ? !(l.beds >= 4) : l.beds !== state.beds) return false; }
+    if (state.baths !== null && l.baths !== state.baths) return false;
+    if (l.price > state.maxPrice) return false;
+    if (state.winOnly && !l.in_window) return false;
+    if (state.hideRisk && l.scam === 'high') return false;
+    if (!state.sources[l.source]) return false;
+    if (state.search) {
+      const hay = ((l.title || '') + ' ' + (l.area || '')).toLowerCase();
+      if (!hay.includes(state.search)) return false;
+    }
+    if (state.maxDist < Infinity && l.dist_km != null && l.dist_km > state.maxDist) return false;
+    return true;
+  });
+}
+function sortList(list) {
+  const s = [...list];
+  if (state.sort === 'priceAsc') s.sort((a, b) => a.price - b.price);
+  else if (state.sort === 'priceDesc') s.sort((a, b) => b.price - a.price);
+  else if (state.sort === 'distAsc') s.sort((a, b) => {
+    if (a.dist_km == null && b.dist_km == null) return 0;
+    if (a.dist_km == null) return 1;
+    if (b.dist_km == null) return -1;
+    return a.dist_km - b.dist_km;
+  });
+  else s.sort((a, b) => b.match_score - a.match_score || a.price - b.price);
+  return s;
+}
+
+/* ---------- render ---------- */
+function render() {
+  const list = sortList(filtered());
+  const total = state.data.listings.length;
+
+  $('sShown').innerHTML = `${list.length}<span class="sub"> / ${total}</span>`;
+  $('sWindow').textContent = list.filter(l => l.in_window).length;
+  $('sMatch').textContent  = list.filter(l => l.match_score >= 80).length;
+  $('sRisk').textContent   = list.filter(l => l.scam === 'medium' || l.scam === 'high').length;
+
+  const grid = $('grid');
+  if (!list.length) {
+    // distinguish "no data at all yet" (fresh clone) from "filters exclude everything"
+    const noData = !state.data.listings.length;
+    grid.innerHTML = noData
+      ? `<div class="empty" style="grid-column:1/-1">
+           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
+           <h3>No listings yet</h3><p>Hit <strong>Scrape now</strong> up top to fetch current rentals.</p></div>`
+      : `<div class="empty" style="grid-column:1/-1">
+           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/><path d="M8 11h6"/></svg>
+           <h3>No listings match</h3><p>Try widening the price, bedrooms, or turning off filters.</p></div>`;
+    return;
+  }
+  grid.innerHTML = list.map(cardHTML).join('');
+}
+
+function cardHTML(l) {
+  const over = l.price > state.crit.max_price;
+  const hero = l.in_window && l.match_score >= 80;
+
+  // match ring
+  const R = 20, C = 2 * Math.PI * R, off = C * (1 - l.match_score / 100);
+  const rc = l.match_score >= 80 ? 'r-hi' : l.match_score >= 50 ? 'r-mid' : 'r-lo';
+
+  // move-in
+  let mi;
+  const mv = (l.move_in || '').toLowerCase();
+  if (l.in_window) mi = `<div class="movein win">${ICON.cal}<span>${l.move_in}</span><span class="win-pill">Sept window</span></div>`;
+  else if (mv === 'now') mi = `<div class="movein norm">${ICON.cal}<span>Available now</span></div>`;
+  else if (!l.move_in || mv === 'unknown') mi = `<div class="movein unk">${ICON.cal}<span>Unknown — ask</span></div>`;
+  else mi = `<div class="movein norm">${ICON.cal}<span>${l.move_in}</span></div>`;
+
+  // scam
+  const flags = (l.scam_flags && l.scam_flags.length) ? l.scam_flags.join(' · ') : 'No flags detected';
+  const scamLabel = { low: 'Looks safe', medium: 'Some flags', high: 'High risk' }[l.scam] || l.scam;
+  const scam = `<span class="badge scam-${l.scam}" title="${flags}"><span class="bdot"></span>${scamLabel}</span>`;
+
+  // area with optional maps link
+  const areaText = escapeHtml(l.area || '—');
+  const distTag = l.dist_km != null ? `<span style="color:var(--text-3);margin-left:4px">${l.dist_km} km</span>` : '';
+  const areaEl = l.maps_url
+    ? `<a href="${l.maps_url}" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:5px;color:inherit;">${ICON.pin}<span>${areaText}</span>${distTag}</a>`
+    : `${ICON.pin}<span>${areaText}</span>${distTag}`;
+
+  // pills
+  let pills = '';
+  if (l.furnished === true) pills += `<span class="badge pill">${ICON.sofa}Furnished</span>`;
+  if (l.pets === true) pills += `<span class="badge pill">${ICON.paw}Pets OK</span>`;
+
+  const sqft = l.sqft && l.sqft > 1 && l.sqft < 9999 ? l.sqft.toLocaleString() : '—';
+
+  const tags = (l.is_new ? '<span class="tag-new">NEW</span>' : '')
+             + (l.gone ? '<span class="tag-gone">GONE</span>' : '');
+
+  return `<article class="card${hero ? ' hero' : ''}${l.gone ? ' gone' : ''}">
+    <div class="card-top">
+      <div class="ring ${rc}">
+        <svg width="46" height="46">
+          <circle class="track" cx="23" cy="23" r="${R}" fill="none" stroke-width="3.5"/>
+          <circle class="fill" cx="23" cy="23" r="${R}" fill="none" stroke-width="3.5"
+            stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"/>
+        </svg>
+        <span class="txt">${Math.round(l.match_score)}</span>
+      </div>
+      <div class="card-head">
+        <a class="title" href="${l.url}" target="_blank" rel="noopener">${tags}${escapeHtml(l.title)}${ICON.ext}</a>
+        <div class="area">${areaEl}</div>
+      </div>
+    </div>
+
+    <div class="price-row">
+      <span class="price mono${over ? ' over' : ''}">${money(l.price)}<span class="mo"> /mo</span></span>
+      ${over ? `<span class="over-tag">over ${money(state.crit.max_price)}</span>` : ''}
+    </div>
+
+    <div class="specs">
+      <div class="spec"><span class="v">${bn(l.beds)}</span><span class="k">Beds</span></div>
+      <div class="spec"><span class="v">${bn(l.baths)}</span><span class="k">Baths</span></div>
+      <div class="spec"><span class="v">${sqft}</span><span class="k">Sqft</span></div>
+    </div>
+
+    ${mi}
+
+    <div class="footer-row">
+      <span class="badge src">${l.source === 'livrent' ? 'liv.rent' : 'Wesbrook'}</span>
+      ${scam}
+      ${pills}
+    </div>
+  </article>`;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+
+</script>
+</body>
+</html>

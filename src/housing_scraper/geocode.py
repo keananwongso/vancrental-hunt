@@ -88,11 +88,33 @@ def geocode_address(address: str, conn=None) -> tuple[float, float] | None:
         if cached is not None:
             return cached
     lat, lng = _nominatim_lookup(address)
+    # Nominatim can't resolve marketing building names ("Granite Terrace III,
+    # 3313 Shrum Lane, …") and returns nothing for the whole query. If the
+    # first segment is a building name (no street number) but a later segment
+    # starts with one, retry from the street number on.
+    if lat is None:
+        stripped = _strip_building_name(address)
+        if stripped and stripped != address:
+            lat, lng = _nominatim_lookup(stripped)
     if conn is not None:
-        db.geocode_put(conn, key, lat, lng)
+        db.geocode_put(conn, key, lat, lng)   # cache under the original key
         conn.commit()
     if lat is not None and lng is not None:
         return (lat, lng)
+    return None
+
+
+def _strip_building_name(address: str) -> str | None:
+    """If `address` starts with a building-name segment (no digits) before a
+    segment that begins with a street number, drop the prefix and return the
+    rest. Otherwise return None. e.g. 'Granite Terrace III, 3313 Shrum Lane, …'
+    -> '3313 Shrum Lane, …'."""
+    parts = [p.strip() for p in address.split(",")]
+    for i, part in enumerate(parts):
+        if part[:1].isdigit():          # first segment starting with a number
+            if i == 0:
+                return None             # already starts with the street number
+            return ", ".join(parts[i:])
     return None
 
 

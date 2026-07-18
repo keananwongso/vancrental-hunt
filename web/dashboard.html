@@ -483,8 +483,8 @@
       <span class="util-label">Move-in</span>
       <label class="toggle-row">
         <span>
-          <span class="lbl">September window only</span><br>
-          <span class="sub">Aug 18 – Sep 15 move-in</span>
+          <span class="lbl" id="winLbl">In move-in window only</span><br>
+          <span class="sub" id="winSub">—</span>
         </span>
         <span class="switch"><input type="checkbox" id="winOnly"><span class="slider"></span></span>
       </label>
@@ -650,21 +650,50 @@ const EMPTY_DATA = {
 
 
 /* ---------- init ---------- */
-fetch('listings.json')
-  .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
-  .then(json => { state.data = json; state.crit = json.criteria; boot(); })
-  .catch(() => {
-    // No data yet (first run) — boot empty so the user can hit "Scrape now".
-    state.data = EMPTY_DATA; state.crit = EMPTY_DATA.criteria; boot();
-  });
+// Load listings AND the live criteria.yaml in parallel. The snapshot's criteria
+// can be stale (only rewritten after a scrape), so the LIVE criteria wins for
+// the sidebar/header — that way filters reflect the search you just ran.
+(async () => {
+  let data = EMPTY_DATA;
+  try {
+    const r = await fetch('listings.json?t=' + Date.now());
+    if (r.ok) data = await r.json();
+  } catch (_) {}
+  let liveCrit = null;
+  try {
+    const r = await fetch('/criteria?t=' + Date.now());
+    if (r.ok) { const c = await r.json(); if (!c.error) liveCrit = c; }
+  } catch (_) {}
+  state.data = data;
+  state.crit = liveCrit || data.criteria;   // live criteria.yaml overrides stale snapshot
+  boot();
+})();
+
+// "Aug 18 – Sep 15" from ISO start/end, or "" if unknown
+function moveInLabel(c) {
+  if (!c.move_in_start || !c.move_in_end) return '';
+  const fmt = iso => { const d = new Date(iso + 'T00:00:00');
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
+  return `${fmt(c.move_in_start)} – ${fmt(c.move_in_end)}`;
+}
 
 function boot() {
   const c = state.crit;
   state.maxPrice = c.max_price;                 // start slider at criteria budget
   $('price').value = c.max_price;
   $('priceVal').textContent = money(c.max_price);
-  $('critText').textContent = `${bn(c.beds)} bed · ${bn(c.baths)} bath · ≤${money(c.max_price)} · Sep 1 ±2wk`;
+  const mi = moveInLabel(c);
+  $('critText').textContent =
+    `${bn(c.beds)} bed · ${bn(c.baths)} bath · ≤${money(c.max_price)}` + (mi ? ` · move-in ${mi}` : '');
+  $('winSub').textContent = mi ? `${mi} move-in` : 'no window set';
   $('lastRefreshed').textContent = state.data.generated || '—';
+
+  // Prefill distance radius from criteria (set when you searched near an address)
+  if (c.location && c.location.radius_km) {
+    state.maxDist = c.location.radius_km;
+    $('distVal').value = c.location.radius_km;
+    $('distDisplay').textContent = c.location.radius_km + ' km';
+  }
 
   buildChips('beds', [0,1,2,3,4], 'beds', c.beds);
   buildChips('baths', [0,1,1.5,2,2.5,3,3.5], 'baths', c.baths);

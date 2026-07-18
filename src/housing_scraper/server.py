@@ -55,6 +55,23 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store, must-revalidate")
         super().end_headers()
 
+    def do_GET(self):
+        if self.path.split("?")[0] == "/criteria":
+            self._handle_get_criteria()
+            return
+        super().do_GET()
+
+    def _handle_get_criteria(self):
+        """GET /criteria → the LIVE criteria.yaml in the snapshot's shape, so the
+        dashboard can sync its filters to the current search immediately, without
+        waiting for a scrape to rewrite listings.json."""
+        from .config import load_criteria
+        from .report import criteria_to_dict
+        try:
+            self._send_json(criteria_to_dict(load_criteria()))
+        except Exception as e:
+            self._send_json({"error": str(e)[:200]}, status=500)
+
     def do_POST(self):
         path, _, query = self.path.partition("?")
         if path == "/geocode":

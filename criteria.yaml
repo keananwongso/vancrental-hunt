@@ -1,0 +1,32 @@
+# Search criteria — edit and re-run `uv run housing-scraper run`
+beds: 2
+baths: 2
+max_price: 3500
+min_price: 1500          # below this is almost certainly scam bait; still shown, flagged
+
+# Move-in window (ranked highest when the stated date falls inside)
+move_in:
+  target: 2026-09-01
+  window_days: 14        # Sept 1 +/- 2 weeks -> Aug 18 - Sep 15
+
+# Areas ranked by preference (matched case-insensitively against address/area/title/description).
+# Listings outside all areas are still shown, just ranked lower.
+areas:
+  - wesbrook
+  - ubc
+  - university endowment lands
+  - point grey
+  - kitsilano
+  - vancouver
+
+# Craigslist search queries to run (each is a separate search)
+craigslist_queries:
+  - "ubc wesbrook"
+  - ""                   # empty = citywide 2br search with min/max price filters
+
+# Center point for distance filtering (optional). Listings will show distance from this point.
+# Adjust radius_km to set the default filter cap in the frontend.
+location:
+  lat: 49.2606            # UBC / Wesbrook Village
+  lng: -123.2460
+  radius_km: 15

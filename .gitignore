@@ -1,0 +1,17 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.env
+
+# Generated outputs (regenerated on every run)
+data/
+report.html
+listings.csv
+web/listings.json

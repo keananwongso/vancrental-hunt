@@ -51,6 +51,9 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path, _, query = self.path.partition("?")
+        if path == "/geocode":
+            self._handle_geocode(query)
+            return
         if path != "/scrape":
             self.send_error(404)
             return
@@ -71,6 +74,28 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 self._emit(type="failed", error=str(e)[:200])
         finally:
             _scrape_lock.release()
+
+    def _handle_geocode(self, query: str):
+        """POST /geocode?q=<address> → {lat, lng} or 404 if not found.
+        Lets the UI re-center the distance filter on any pasted address."""
+        from urllib.parse import parse_qs
+        from . import db
+        from .geocode import geocode_address
+
+        address = (parse_qs(query).get("q") or [""])[0].strip()
+        if not address:
+            self.send_error(400, "missing q")
+            return
+        result = geocode_address(address, conn=db.connect())
+        if result is None:
+            self.send_error(404, "address not found")
+            return
+        body = json.dumps({"lat": result[0], "lng": result[1], "address": address}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     _emit_lock = threading.Lock()
 
@@ -266,6 +291,11 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             with contextlib.redirect_stdout(io.StringIO()):
                 render(matches, criteria, new_ids, open_browser=False, conn=conn,
                        geocode_progress=geo_progress)
+            # render() populated lat/lng on the listings — persist so coords stick
+            # in the DB (otherwise they only live in geocode_cache and are lost).
+            for l in matches:
+                db.update_json(conn, l)
+            conn.commit()
         finally:
             stop_heartbeat.set()
 

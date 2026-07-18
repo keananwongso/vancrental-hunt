@@ -77,6 +77,25 @@ def _geocode_one(listing: Listing, conn) -> None:
     time.sleep(_RATE_DELAY)
 
 
+def geocode_address(address: str, conn=None) -> tuple[float, float] | None:
+    """Geocode a single free-text address to (lat, lng), or None. Uses the DB
+    cache if a connection is given. Public entry point for 'center on this address'."""
+    key = address.strip().lower()
+    if conn is not None:
+        cached = db.geocode_get(conn, key)
+        if cached == "failed":
+            return None
+        if cached is not None:
+            return cached
+    lat, lng = _nominatim_lookup(address)
+    if conn is not None:
+        db.geocode_put(conn, key, lat, lng)
+        conn.commit()
+    if lat is not None and lng is not None:
+        return (lat, lng)
+    return None
+
+
 def _nominatim_lookup(address: str) -> tuple[float | None, float | None]:
     query = (
         address

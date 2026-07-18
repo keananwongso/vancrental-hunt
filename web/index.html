@@ -441,12 +441,18 @@
     </div>
 
     <div class="filter-group" id="distGroup" hidden>
-      <span class="util-label">Max distance</span>
-      <div class="range-row">
-        <span class="util-label" style="text-transform:none;letter-spacing:0">km from center</span>
+      <span class="util-label">Distance from an address</span>
+      <div class="addr-box">
+        <input type="text" id="centerAddr" placeholder="Paste an address to center on…" autocomplete="off"
+               style="width:100%;background:var(--bg-elev);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);padding:8px 10px;font-size:13px;font-family:var(--sans);outline:none;transition:border-color 0.12s;" />
+        <button id="centerGo" class="reset-btn" style="margin-top:6px;width:100%;">Set center</button>
+        <div id="centerStatus" class="sub" style="margin-top:5px;color:var(--text-3);font-size:11px;min-height:14px;"></div>
+      </div>
+      <div class="range-row" style="margin-top:10px;">
+        <span class="util-label" style="text-transform:none;letter-spacing:0">Within</span>
         <span class="val mono" id="distDisplay">any</span>
       </div>
-      <input type="number" id="distVal" min="0" step="0.5" placeholder="e.g. 5"
+      <input type="number" id="distVal" min="0" step="0.5" placeholder="e.g. 5 (km)"
              style="width:100%;background:var(--bg-elev);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);padding:8px 10px;font-size:13px;font-family:var(--sans);outline:none;transition:border-color 0.12s;" />
     </div>
 
@@ -520,9 +526,28 @@ const state = {
   sources: { livrent: true, wesbrook: true },
   sort: 'score',
   useApify: false,
+  center: null,        // {lat,lng} — set by pasting an address; recomputes dist_km
 };
 
 const $ = id => document.getElementById(id);
+
+// great-circle distance in km — used to recompute distances against a pasted center
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const R = 6371, toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// recompute every listing's dist_km against the current center (if set + geocoded)
+function recomputeDistances() {
+  if (!state.center || !state.data) return;
+  for (const l of state.data.listings) {
+    l.dist_km = (l.lat != null && l.lng != null)
+      ? Math.round(haversineKm(state.center.lat, state.center.lng, l.lat, l.lng) * 100) / 100
+      : null;
+  }
+}
 
 const ICON = {
   ext:  '<svg class="ext" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5h10v10"/><path d="M19 5L8 16"/><path d="M15 19H5V9"/></svg>',
@@ -553,9 +578,12 @@ function boot() {
   buildChips('beds', [0,1,2,3,4], 'beds', c.beds);
   buildChips('baths', [0,1,1.5,2,2.5,3,3.5], 'baths', c.baths);
   buildSources();
-  if (c.location) $('distGroup').hidden = false;
+  $('distGroup').hidden = false;             // address-based distance always available
+  // default center: criteria.location if present, else the geocoded listings' data
+  if (c.location) state.center = { lat: c.location.lat, lng: c.location.lng };
   wire();
   wireScrape();
+  wireCenter();
   render();
 }
 
@@ -707,6 +735,7 @@ function wireScrape() {
             ev.items.forEach(it => byId.set(it.id, it));
             state.data.listings = [...byId.values()];
             buildSources();
+            recomputeDistances();
             render();
           } else if (ev.type === 'heartbeat') {
             // keep-alive; ticker already shows elapsed. Nothing to render.
@@ -737,6 +766,7 @@ function wireScrape() {
         state.data = fresh; state.crit = fresh.criteria;
         $('lastRefreshed').textContent = fresh.generated || '—';
         buildSources();
+        recomputeDistances();
         render();
       }
       if (!sawComplete) {
@@ -750,6 +780,30 @@ function wireScrape() {
       finishRun(`<span style="color:var(--bad)">Error: ${err.message}. Start the server with </span><code>uv run housing-scraper serve</code>`);
     }
   });
+}
+
+// Paste an address → geocode via the server → re-center distance calc.
+function wireCenter() {
+  const input = $('centerAddr'), btn = $('centerGo'), status = $('centerStatus');
+  const go = async () => {
+    const addr = input.value.trim();
+    if (!addr) return;
+    status.textContent = 'Locating…';
+    try {
+      const res = await fetch('/geocode?q=' + encodeURIComponent(addr), { method: 'POST' });
+      if (res.status === 404) { status.textContent = 'Address not found — try adding city/postal code.'; return; }
+      if (!res.ok) throw new Error(res.status);
+      const { lat, lng } = await res.json();
+      state.center = { lat, lng };
+      status.innerHTML = `<span style="color:var(--accent)">✓ Centered here.</span> Distances updated.`;
+      recomputeDistances();
+      render();
+    } catch (e) {
+      status.textContent = 'Lookup failed — is the server running?';
+    }
+  };
+  btn.onclick = go;
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
 }
 
 function buildChips(containerId, values, key, preselect) {

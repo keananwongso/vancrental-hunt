@@ -87,4 +87,8 @@ def main() -> None:
 
     matches = [l for l in listings if l.match_score >= 40]
     out = render(matches, criteria, new_ids, open_browser=not args.no_browser, conn=conn)
+    # render() geocoded these — persist so lat/lng stick in the DB
+    for l in matches:
+        db.update_json(conn, l)
+    conn.commit()
     print(f"{len(listings)} listings in DB, {len(matches)} shown, {len(new_ids)} new → {out}")

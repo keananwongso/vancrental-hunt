@@ -55,6 +55,8 @@ def main() -> None:
     except Exception as e:
         print(f"apify sources unavailable: {e}")
 
+    from datetime import datetime
+    run_id = datetime.now().isoformat()
     names = args.source or list(available)
     new_ids: set[str] = set()
     for name in names:
@@ -68,14 +70,19 @@ def main() -> None:
             except Exception as e:
                 print(f"  {name}: normalize failed for {raw.url}: {e}")
                 continue
-            if db.upsert(conn, listing):
+            if db.upsert(conn, listing, run_id):
                 new_ids.add(listing.id)
         conn.commit()
 
-    listings = [l for l, _ in db.all_listings(conn)]
+    scraped = set(names)  # only mark 'gone' for sources we actually ran this time
+    listings = []
+    for l, last_seen in db.all_listings(conn):
+        l.gone = l.source in scraped and last_seen != run_id
+        l.is_new = l.id in new_ids
+        listings.append(l)
     score_all(listings, criteria)
     for l in listings:
-        db.upsert(conn, l)  # persist scores
+        db.update_json(conn, l)  # persist scores, keep last_seen
     conn.commit()
 
     matches = [l for l in listings if l.match_score >= 40]

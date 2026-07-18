@@ -15,6 +15,7 @@ import json
 import threading
 import time
 import traceback
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -87,6 +88,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         from . import db
         from .config import load_criteria
         from .extract import normalize
+        from .models import Listing
         from .report import listing_to_dict, render
         from .score import score_all
         from .sources.craigslist import CraigslistSource
@@ -95,9 +97,10 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
         criteria = load_criteria()
         conn = db.connect()
-        # Fresh every run: wipe old listings so results reflect only this scrape.
-        # (extract + geocode caches are kept, so this stays fast and cheap.)
-        db.clear_listings(conn)
+        # Persistent: listings accumulate across runs. Each run stamps the
+        # listings it sees with `run_id`; anything from a finished source with
+        # an older stamp is "gone" (delisted). Brand-new listings get is_new.
+        run_id = datetime.now().isoformat()
         sources = {
             "wesbrook": WesbrookSource(),
             "livrent": LivRentSource(),
@@ -196,20 +199,30 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                         except Exception:
                             continue
                         kept += 1
+                        listing.is_new = db.upsert(conn, listing, run_id)
                         this_source.append(listing)
-                        db.upsert(conn, listing)
                         if i % 5 == 0 or i == total:
                             self._emit(type="source", id=name, status="normalizing",
                                        found=total, done=i,
                                        elapsed=round(time.monotonic() - norm_start, 1))
                     conn.commit()
+                    # Any listing from this source not seen this run is delisted.
+                    # Load those too, flag them gone, so the UI can grey them out.
+                    gone = []
+                    for gid in db.gone_ids(conn, name, run_id):
+                        row = conn.execute("SELECT json FROM listings WHERE id = ?", (gid,)).fetchone()
+                        if row:
+                            gl = Listing.model_validate_json(row[0])
+                            gl.gone = True
+                            gone.append(gl)
                     # Score this source's listings and push them to the UI right
                     # away, so fast sources (Wesbrook ~7s) appear without waiting
                     # for slow ones (Craigslist ~4min). Scoring uses the criteria;
                     # scam market-median is refined in the final full pass.
-                    score_all(this_source, criteria)
+                    batch = this_source + gone
+                    score_all(batch, criteria)
                     self._emit(type="listings", id=name,
-                               items=[listing_to_dict(l, criteria) for l in this_source])
+                               items=[listing_to_dict(l, criteria) for l in batch])
                     took = round(time.monotonic() - norm_start + fetch_s, 1)
                     self._emit(type="source", id=name, status="done",
                                found=total, kept=kept, took=took)
@@ -224,11 +237,17 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         # before the final "complete" event.
         try:
             self._emit(type="stage", text="Scoring & ranking…")
-            listings = [l for l, _ in db.all_listings(conn)]
+            scraped = set(sources)  # only sources we ran can have 'gone' listings
+            listings = []
+            for l, last_seen in db.all_listings(conn):
+                l.gone = l.source in scraped and last_seen != run_id
+                l.is_new = db.is_new_since_last_run(conn, l.id, run_id)
+                listings.append(l)
             score_all(listings, criteria)
             for l in listings:
-                db.upsert(conn, l)
+                db.update_json(conn, l)               # persist scores, keep last_seen
             conn.commit()
+            # show matches, plus any gone listing that still matches (greyed in UI)
             matches = [l for l in listings if l.match_score >= 40]
 
             self._emit(type="stage", text="Geocoding addresses…")

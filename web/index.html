@@ -291,6 +291,14 @@
     content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 2px;
     background: linear-gradient(var(--accent), var(--accent-dim)); border-radius: 2px;
   }
+  .card.gone { opacity: 0.5; }
+  .card.gone .title { text-decoration: line-through; }
+  .tag-new, .tag-gone {
+    display: inline-block; font-size: 9.5px; font-weight: 700; letter-spacing: .05em;
+    padding: 1px 5px; border-radius: 4px; margin-right: 6px; vertical-align: 1px;
+  }
+  .tag-new { background: var(--accent-fade); color: var(--accent); border: 1px solid var(--accent-dim); }
+  .tag-gone { background: rgba(248,113,113,0.12); color: var(--bad, #f87171); border: 1px solid var(--bad, #f87171); }
 
   .card-top { display: flex; gap: 13px; align-items: flex-start; }
 
@@ -694,8 +702,10 @@ function wireScrape() {
           } else if (ev.type === 'source') {
             update(ev);
           } else if (ev.type === 'listings') {
-            // a source finished — append its listings and show them right away
-            state.data.listings.push(...ev.items);
+            // a source finished — merge its listings by id (replace dupes) and show now
+            const byId = new Map(state.data.listings.map(l => [l.id, l]));
+            ev.items.forEach(it => byId.set(it.id, it));
+            state.data.listings = [...byId.values()];
             buildSources();
             render();
           } else if (ev.type === 'heartbeat') {
@@ -711,7 +721,7 @@ function wireScrape() {
             sawComplete = true;
             const bad = (ev.sources || []).filter(s => s.status === 'error' || s.status === 'timeout');
             const warn = bad.length ? ` · <span style="color:var(--warn,#b58900)">${bad.length} source(s) failed</span>` : '';
-            finishRun(`<span style="color:var(--good)">✓ Done in ${fmt(ev.elapsed || 0)}</span> · ${ev.total} in database · ${ev.shown} shown · ${ev.new} new${warn}`);
+            finishRun(`<span style="color:var(--good)">✓ Done in ${fmt(ev.elapsed || 0)}</span> · ${ev.total} scraped · ${ev.shown} match your filters${warn}`);
           }
         }
       }
@@ -908,7 +918,10 @@ function cardHTML(l) {
 
   const sqft = l.sqft && l.sqft > 1 && l.sqft < 9999 ? l.sqft.toLocaleString() : '—';
 
-  return `<article class="card${hero ? ' hero' : ''}">
+  const tags = (l.is_new ? '<span class="tag-new">NEW</span>' : '')
+             + (l.gone ? '<span class="tag-gone">GONE</span>' : '');
+
+  return `<article class="card${hero ? ' hero' : ''}${l.gone ? ' gone' : ''}">
     <div class="card-top">
       <div class="ring ${rc}">
         <svg width="46" height="46">
@@ -919,7 +932,7 @@ function cardHTML(l) {
         <span class="txt">${Math.round(l.match_score)}</span>
       </div>
       <div class="card-head">
-        <a class="title" href="${l.url}" target="_blank" rel="noopener">${escapeHtml(l.title)}${ICON.ext}</a>
+        <a class="title" href="${l.url}" target="_blank" rel="noopener">${tags}${escapeHtml(l.title)}${ICON.ext}</a>
         <div class="area">${areaEl}</div>
       </div>
     </div>

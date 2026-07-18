@@ -39,32 +39,47 @@ def connect() -> sqlite3.Connection:
     return conn
 
 
-def clear_listings(conn: sqlite3.Connection) -> None:
-    """Drop all listings so a run starts fresh. Leaves extract_cache and
-    geocode_cache intact — those just make re-runs cheap and don't affect
-    which listings show up."""
-    conn.execute("DELETE FROM listings")
-    conn.commit()
-
-
-def upsert(conn: sqlite3.Connection, listing: Listing) -> bool:
-    """Insert or refresh a listing. Returns True if it's new."""
-    now = datetime.now().isoformat()
+def upsert(conn: sqlite3.Connection, listing: Listing, seen_at: str) -> bool:
+    """Insert or refresh a listing, stamping last_seen with this run's `seen_at`.
+    Returns True if the listing is new (first time we've ever seen this id)."""
     cur = conn.execute("SELECT 1 FROM listings WHERE id = ?", (listing.id,))
     is_new = cur.fetchone() is None
     conn.execute(
         """INSERT INTO listings (id, source, url, json, first_seen, last_seen)
            VALUES (?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET json = excluded.json, last_seen = excluded.last_seen""",
-        (listing.id, listing.source, listing.url, listing.model_dump_json(), now, now),
+        (listing.id, listing.source, listing.url, listing.model_dump_json(), seen_at, seen_at),
     )
     return is_new
 
 
+def is_new_since_last_run(conn: sqlite3.Connection, listing_id: str, this_run: str) -> bool:
+    """True if this listing's first_seen is from the current run (i.e. brand new)."""
+    row = conn.execute("SELECT first_seen FROM listings WHERE id = ?", (listing_id,)).fetchone()
+    return bool(row) and row[0] == this_run
+
+
+def gone_ids(conn: sqlite3.Connection, source: str, this_run: str) -> list[str]:
+    """IDs from `source` that were NOT seen in the current run (i.e. delisted)."""
+    rows = conn.execute(
+        "SELECT id FROM listings WHERE source = ? AND last_seen != ?", (source, this_run)
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
+def update_json(conn: sqlite3.Connection, listing: Listing) -> None:
+    """Persist a listing's JSON (e.g. after scoring) WITHOUT touching last_seen,
+    so 'gone' listings keep their old timestamp."""
+    conn.execute(
+        "UPDATE listings SET json = ? WHERE id = ?",
+        (listing.model_dump_json(), listing.id),
+    )
+
+
 def all_listings(conn: sqlite3.Connection) -> list[tuple[Listing, str]]:
-    """Return (listing, first_seen) for everything in the DB."""
-    rows = conn.execute("SELECT json, first_seen FROM listings").fetchall()
-    return [(Listing.model_validate_json(j), fs) for j, fs in rows]
+    """Return (listing, last_seen) for everything in the DB."""
+    rows = conn.execute("SELECT json, last_seen FROM listings").fetchall()
+    return [(Listing.model_validate_json(j), ls) for j, ls in rows]
 
 
 def cache_get(conn: sqlite3.Connection, url_hash: str) -> dict | None:

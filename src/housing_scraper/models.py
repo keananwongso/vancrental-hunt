@@ -41,6 +41,8 @@ class Listing(BaseModel):
     in_window: bool = False
     move_in_label: str = ""
     badge: str = ""
+    is_new: bool = False   # first seen in the current run
+    gone: bool = False     # was in the DB but not seen in the latest run (delisted)
 
     # geo fields (filled by geocode pass in report.py)
     lat: float | None = None

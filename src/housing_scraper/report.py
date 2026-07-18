@@ -140,6 +140,7 @@ def listing_to_dict(l: Listing, criteria: Criteria) -> dict:
         "match_score": l.match_score, "scam": l.badge,  # type: ignore[attr-defined]
         "scam_flags": l.scam_flags, "furnished": l.furnished, "pets": l.pets,
         "lat": l.lat, "lng": l.lng, "maps_url": l.maps_url, "dist_km": l.dist_km,
+        "is_new": l.is_new, "gone": l.gone,
     }
 
 
@@ -166,7 +167,7 @@ def _write_web_json(listings: list[Listing], criteria: Criteria, new_ids: set[st
         "generated": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "criteria": criteria_to_dict(criteria),
         "listings": [
-            {**listing_to_dict(l, criteria), "is_new": l.id in new_ids}
+            {**listing_to_dict(l, criteria), "is_new": l.is_new or l.id in new_ids}
             for l in listings
         ],
     }

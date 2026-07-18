@@ -47,6 +47,17 @@
     background:
       radial-gradient(90% 60% at 50% 0%, rgba(45,212,191,0.06), transparent 60%),
       var(--bg); }
+  /* as a dismissible overlay on top of the dashboard */
+  .landing.as-overlay { position: fixed; inset: 0; z-index: 50; min-height: 0;
+    background:
+      radial-gradient(90% 60% at 50% 0%, rgba(45,212,191,0.06), transparent 60%),
+      rgba(8,11,16,0.92);
+    backdrop-filter: blur(6px); overflow-y: auto; align-content: center; }
+  .landing-close { position: fixed; top: 20px; right: 24px; z-index: 51;
+    width: 34px; height: 34px; border-radius: 8px; background: var(--bg-elev);
+    border: 1px solid var(--border); color: var(--text-2); font-size: 15px; cursor: pointer;
+    transition: color .12s, border-color .12s; }
+  .landing-close:hover { color: var(--text); border-color: var(--accent-dim); }
   .landing-inner { width: 100%; max-width: 680px; text-align: center; }
   .beta-pill { display: inline-block; font-size: 12px; color: var(--text-2);
     border: 1px solid var(--border); border-radius: 99px; padding: 4px 14px; margin-bottom: 26px; }
@@ -431,8 +442,9 @@
 </head>
 <body>
 
-<!-- ============ LANDING ============ -->
-<div class="landing" id="landing">
+<!-- ============ LANDING / SEARCH PANEL ============ -->
+<div class="landing" id="landing" hidden>
+  <button class="landing-close" id="landingClose" hidden title="Back to results">✕</button>
   <div class="landing-inner">
     <span class="beta-pill">Vancouver rentals</span>
     <h1 class="landing-title">Find your next place<br>in plain English</h1>
@@ -693,16 +705,38 @@ function boot() {
   wireCenter();
   wireLanding();
   render();
+
+  // Entry decision: if we already have listings, go straight to the dashboard
+  // (browsing is the common case). Only a fresh start with no data lands on
+  // the full-screen search page.
+  if (state.data.listings && state.data.listings.length) {
+    showDashboard();
+  } else {
+    showLanding(true);  // firstRun = true → full screen, no close button
+  }
 }
 
 /* ---------- landing page: plain-text search + manual params ---------- */
 function showDashboard() {
   $('landing').hidden = true;
+  $('landing').classList.remove('as-overlay');
   $('app').hidden = false;
 }
-function showLanding() {
-  $('app').hidden = true;
-  $('landing').hidden = false;
+function showLanding(firstRun) {
+  // firstRun: full-screen entry (no data yet, can't dismiss).
+  // otherwise: slide-over panel on top of the dashboard, dismissible.
+  const landing = $('landing');
+  const hasData = state.data && state.data.listings && state.data.listings.length;
+  if (firstRun || !hasData) {
+    $('app').hidden = true;
+    landing.classList.remove('as-overlay');
+    $('landingClose').hidden = true;
+  } else {
+    $('app').hidden = false;          // keep dashboard behind the panel
+    landing.classList.add('as-overlay');
+    $('landingClose').hidden = false;
+  }
+  landing.hidden = false;
 }
 
 function wireLanding() {
@@ -804,7 +838,12 @@ function wireLanding() {
   input.addEventListener('keydown', e => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); runParse(); }
   });
-  $('homeBrand').onclick = showLanding;   // click logo → back to search
+  $('homeBrand').onclick = () => showLanding(false);   // click logo → search panel over dashboard
+  $('landingClose').onclick = showDashboard;           // dismiss the overlay
+  document.addEventListener('keydown', e => {
+    // Esc closes the search overlay only when there's data to return to
+    if (e.key === 'Escape' && $('landing').classList.contains('as-overlay')) showDashboard();
+  });
 
   // manual params toggle
   $('manualToggle').onclick = () => {

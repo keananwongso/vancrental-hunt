@@ -804,33 +804,40 @@ function wireLanding() {
     parsedBox.innerHTML =
       `<div class="ps-sum">${data.summary || 'Here’s what I understood:'}</div>
        <div class="ps-facts">${facts.map(f => `<span class="ps-fact">${f}</span>`).join('')}</div>
-       <button class="nl-go" id="parsedGo">Search these listings →</button>`;
-    $('parsedGo').onclick = () => applyAndGo({ criteria: c });
+       <button class="nl-go" id="parsedGo">Search these listings →</button>
+       <div class="err-line" id="applyErr" hidden></div>`;
+    $('parsedGo').onclick = (e) => applyAndGo({ criteria: c }, e.currentTarget);
   };
 
-  const applyAndGo = async (payload) => {
-    const btn = document.querySelector('#parsedGo, #mpGo');
+  const applyAndGo = async (payload, btn) => {
+    const label = btn ? btn.textContent : '';
     if (btn) { btn.disabled = true; btn.textContent = 'Setting up…'; }
+    const errEl = $('applyErr');
+    if (errEl) errEl.hidden = true;
     try {
       const res = await fetch('/apply-criteria', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      // criteria written; enter the dashboard. If there's no data yet the user
-      // just hits "Scrape now"; if there is, we reload it fresh.
-      state.crit = { ...state.crit, beds: payload.criteria.beds ?? state.crit.beds };
+      if (!res.ok || data.error) throw new Error(data.error || ('server ' + res.status));
+      // Criteria saved. Enter the dashboard and reload the latest snapshot so
+      // the header/filters reflect the new search. This is the success path —
+      // do NOT let a reload hiccup keep us on the search screen.
       showDashboard();
-      // reload latest snapshot so header/filters reflect new criteria if present
       try {
-        const fresh = await fetch('listings.json?t=' + Date.now()).then(r => r.json());
-        state.data = fresh; state.crit = fresh.criteria; buildSources(); recomputeDistances(); render();
-      } catch (_) {}
+        const fresh = await fetch('listings.json?t=' + Date.now()).then(r => r.ok ? r.json() : null);
+        if (fresh) {
+          state.data = fresh; state.crit = fresh.criteria;
+          buildSources(); recomputeDistances();
+        }
+      } catch (_) { /* no snapshot yet — dashboard shows empty state + Scrape now */ }
+      render();
+      return;
     } catch (e) {
-      alert('Could not apply search: ' + e.message);
+      if (errEl) { errEl.hidden = false; errEl.textContent = 'Could not apply search: ' + e.message + ' — is the server running (uv run housing-scraper serve)?'; }
     } finally {
-      if (btn) { btn.disabled = false; btn.textContent = 'Search these listings →'; }
+      if (btn) { btn.disabled = false; btn.textContent = label || 'Search these listings →'; }
     }
   };
 
@@ -863,7 +870,7 @@ function wireLanding() {
       craigslist_queries: areas.length ? [areas[0], ''] : [''],
     };
     if ($('mpAddr').value.trim()) criteria._center_address = $('mpAddr').value.trim();
-    applyAndGo({ criteria });
+    applyAndGo({ criteria }, $('mpGo'));
   };
 }
 

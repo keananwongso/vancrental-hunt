@@ -42,6 +42,13 @@
   a { color: inherit; text-decoration: none; }
   ::selection { background: var(--accent-fade); }
 
+  /* dark, unobtrusive scrollbars everywhere (default white one clashes) */
+  * { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--border-soft); }
+
   /* ============ LANDING ============ */
   .landing { min-height: 100vh; display: grid; place-items: center; padding: 40px 20px;
     background:
@@ -165,6 +172,15 @@
 
   .range-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
   .range-row .val { font-family: var(--mono); font-size: 13px; color: var(--accent); }
+  .price-input { display: inline-flex; align-items: center; gap: 1px; background: var(--bg-elev);
+    border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; transition: border-color .12s; }
+  .price-input:focus-within { border-color: var(--accent-dim); }
+  .price-input .dollar { color: var(--accent); font-family: var(--mono); font-size: 13px; }
+  .price-input input { width: 68px; background: transparent; border: none; outline: none;
+    color: var(--accent); font-family: var(--mono); font-size: 13px; text-align: right;
+    -moz-appearance: textfield; }
+  .price-input input::-webkit-outer-spin-button,
+  .price-input input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   input[type="range"] {
     -webkit-appearance: none; appearance: none;
     width: 100%; height: 4px; border-radius: 4px;
@@ -474,7 +490,7 @@
       <span class="util-label">Max price</span>
       <div class="range-row">
         <span class="util-label" style="text-transform:none;letter-spacing:0">Up to</span>
-        <span class="val mono" id="priceVal">$8,600</span>
+        <div class="price-input"><span class="dollar">$</span><input type="number" id="priceNum" min="0" step="50" value="8600" /></div>
       </div>
       <input type="range" id="price" min="770" max="8600" step="10" value="8600" />
     </div>
@@ -677,11 +693,20 @@ function moveInLabel(c) {
   return `${fmt(c.move_in_start)} – ${fmt(c.move_in_end)}`;
 }
 
+// Keep the max-price state, slider, and typed input in sync. The slider caps at
+// its max, but a typed value can exceed it (the number input isn't capped).
+function setMaxPrice(v, opts) {
+  opts = opts || {};
+  v = Math.max(0, +v || 0);
+  state.maxPrice = v;
+  const slider = $('price');
+  if (!opts.fromSlider) slider.value = Math.min(v, +slider.max);
+  if (!opts.fromInput) $('priceNum').value = v;
+}
+
 function boot() {
   const c = state.crit;
-  state.maxPrice = c.max_price;                 // start slider at criteria budget
-  $('price').value = c.max_price;
-  $('priceVal').textContent = money(c.max_price);
+  setMaxPrice(c.max_price);                      // start at criteria budget
   const mi = moveInLabel(c);
   $('critText').textContent =
     `${bn(c.beds)} bed · ${bn(c.baths)} bath · ≤${money(c.max_price)}` + (mi ? ` · move-in ${mi}` : '');
@@ -704,6 +729,9 @@ function boot() {
   wire();
   wireScrape();
   wireCenter();
+
+  // Restore saved filters (beds/price/distance/etc.) so a refresh keeps your view.
+  loadFilters();
 
   // "New search" — the brand in the sidebar returns to the landing page.
   $('homeBrand').onclick = () => { window.location.href = 'index.html?new=1'; };
@@ -949,6 +977,7 @@ function wireCenter() {
       state.center = { lat, lng };
       status.innerHTML = `<span style="color:var(--accent)">✓ Centered here.</span> Distances updated.`;
       recomputeDistances();
+      saveFilters();
       render();
     } catch (e) {
       status.textContent = 'Lookup failed — is the server running?';
@@ -965,7 +994,7 @@ function buildChips(containerId, values, key, preselect) {
     const c = document.createElement('div');
     c.className = 'chip' + (state[key] === val ? ' active' : '');
     c.textContent = label;
-    c.onclick = () => { state[key] = (state[key] === val) ? null : val; refreshChips(el, key); render(); };
+    c.onclick = () => { state[key] = (state[key] === val) ? null : val; refreshChips(el, key); saveFilters(); render(); };
     c._val = val;
     el.appendChild(c);
   };
@@ -1002,7 +1031,7 @@ function buildSources() {
     const row = document.createElement('div');
     row.className = 'check-row' + (on ? ' checked' : '');
     row.innerHTML = `<span class="check-box">${on ? ICON.check : ''}</span><span class="name">${SOURCE_NAMES[id] || id}</span><span class="src-count mono">${count}</span>`;
-    row.onclick = () => { state.sources[id] = !state.sources[id]; row.classList.toggle('checked', state.sources[id]); render(); };
+    row.onclick = () => { state.sources[id] = !state.sources[id]; row.classList.toggle('checked', state.sources[id]); saveFilters(); render(); };
     el.appendChild(row);
   });
   SOON_SOURCES.forEach(n => {
@@ -1013,27 +1042,57 @@ function buildSources() {
   });
 }
 
+// --- filter persistence: survive refreshes via localStorage ---
+const FILTER_KEYS = ['beds','baths','maxPrice','maxDist','winOnly','hideRisk','search','sort','sources','center'];
+function saveFilters() {
+  try {
+    const snap = {}; FILTER_KEYS.forEach(k => snap[k] = state[k]);
+    localStorage.setItem('rentfilters', JSON.stringify(snap));
+  } catch (_) {}
+}
+function loadFilters() {
+  try {
+    const raw = localStorage.getItem('rentfilters');
+    if (!raw) return;
+    const s = JSON.parse(raw);
+    FILTER_KEYS.forEach(k => { if (s[k] !== undefined) state[k] = s[k]; });
+    // reflect restored values in the controls
+    $('search').value = state.search || '';
+    $('winOnly').checked = !!state.winOnly;
+    $('hideRisk').checked = !!state.hideRisk;
+    $('sort').value = state.sort || 'score';
+    if (state.maxPrice != null) setMaxPrice(state.maxPrice);
+    if (state.maxDist != null && isFinite(state.maxDist)) {
+      $('distVal').value = state.maxDist; $('distDisplay').textContent = state.maxDist + ' km';
+    }
+    if (state.center) recomputeDistances();   // re-apply the saved address center
+    refreshChips($('beds'), 'beds'); refreshChips($('baths'), 'baths');
+  } catch (_) {}
+}
+
 function wire() {
-  $('search').oninput = e => { state.search = e.target.value.toLowerCase().trim(); render(); };
-  $('price').oninput = e => { state.maxPrice = +e.target.value; $('priceVal').textContent = money(+e.target.value); render(); };
-  $('winOnly').onchange = e => { state.winOnly = e.target.checked; render(); };
-  $('hideRisk').onchange = e => { state.hideRisk = e.target.checked; render(); };
-  $('sort').onchange = e => { state.sort = e.target.value; render(); };
+  $('search').oninput = e => { state.search = e.target.value.toLowerCase().trim(); saveFilters(); render(); };
+  $('price').oninput = e => { setMaxPrice(+e.target.value, {fromSlider: true}); saveFilters(); render(); };
+  $('priceNum').oninput = e => { setMaxPrice(+e.target.value, {fromInput: true}); saveFilters(); render(); };
+  $('winOnly').onchange = e => { state.winOnly = e.target.checked; saveFilters(); render(); };
+  $('hideRisk').onchange = e => { state.hideRisk = e.target.checked; saveFilters(); render(); };
+  $('sort').onchange = e => { state.sort = e.target.value; saveFilters(); render(); };
   $('distVal').oninput = e => {
     const v = parseFloat(e.target.value);
     state.maxDist = isNaN(v) || v <= 0 ? Infinity : v;
     $('distDisplay').textContent = isFinite(state.maxDist) ? state.maxDist + ' km' : 'any';
-    render();
+    saveFilters(); render();
   };
   $('reset').onclick = () => {
     state.beds = null; state.baths = null; state.winOnly = false; state.hideRisk = false; state.search = '';
-    state.maxPrice = state.crit.max_price; state.maxDist = Infinity; state.sort = 'score';
+    state.maxDist = Infinity; state.sort = 'score';
     Object.keys(state.sources).forEach(id => state.sources[id] = true);
     $('search').value = ''; $('winOnly').checked = false; $('hideRisk').checked = false; $('sort').value = 'score';
-    $('price').value = state.crit.max_price; $('priceVal').textContent = money(state.crit.max_price);
+    setMaxPrice(state.crit.max_price);
     $('distVal').value = ''; $('distDisplay').textContent = 'any';
     refreshChips($('beds'), 'beds'); refreshChips($('baths'), 'baths');
     [...$('sources').querySelectorAll('.check-row:not(.disabled)')].forEach(r => r.classList.add('checked'));
+    localStorage.removeItem('rentfilters');   // clear saved filters on reset
     render();
   };
 }

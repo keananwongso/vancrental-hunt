@@ -47,5 +47,10 @@ class Criteria(BaseModel):
 
 def load_criteria(path: Path | None = None) -> Criteria:
     path = path or PROJECT_ROOT / "criteria.yaml"
+    # First run (fresh clone): seed criteria.yaml from the tracked template.
+    if not path.exists():
+        example = PROJECT_ROOT / "criteria.example.yaml"
+        if example.exists():
+            path.write_text(example.read_text())
     with open(path) as f:
         return Criteria.model_validate(yaml.safe_load(f))

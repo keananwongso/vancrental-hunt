@@ -1,0 +1,28 @@
+# Search criteria template. Copied to criteria.yaml on first run.
+# Edit criteria.yaml directly, or set it from the app's plain-text search.
+
+beds: 2
+baths: 2
+max_price: 3500
+min_price: 1500          # below this is almost certainly scam bait; still shown, flagged
+
+# Move-in window (ranked highest when the stated date falls inside)
+move_in:
+  target: 2026-09-01
+  window_days: 14        # target +/- this many days
+
+# Areas ranked by preference (matched case-insensitively against address/area/title/description).
+# Listings outside all areas are still shown, just ranked lower.
+areas:
+  - vancouver
+
+# Craigslist search queries to run (each is a separate search)
+craigslist_queries:
+  - ""                   # empty = citywide search with the bed/price filters above
+
+# Center point for distance filtering (optional). Set this from the app by pasting
+# an address, or fill it in manually. Listings show distance from this point.
+# location:
+#   lat: 49.2606
+#   lng: -123.2460
+#   radius_km: 15

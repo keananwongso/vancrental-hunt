@@ -15,3 +15,6 @@ data/
 report.html
 listings.csv
 web/listings.json
+
+# Your live search (rewritten by the app); the template is criteria.example.yaml
+criteria.yaml

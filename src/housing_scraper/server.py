@@ -307,15 +307,20 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                             self._emit(type="source", id=name, status="normalizing",
                                        found=total, done=i,
                                        elapsed=round(time.monotonic() - norm_start, 1))
+                    # This source completed — log the run so it counts toward the
+                    # GONE miss-threshold (a listing is only delisted after its
+                    # source misses it GONE_AFTER_MISSES completed runs running).
+                    db.record_run(conn, name, run_id)
                     conn.commit()
-                    # Any listing from this source not seen this run is delisted.
-                    # Load those too, flag them gone, so the UI can grey them out.
+                    # Load this source's not-seen-this-run listings so the UI can
+                    # show them; flag GONE only once they've been missed enough
+                    # consecutive completed runs (capped fetches miss ≠ delisted).
                     gone = []
-                    for gid in db.gone_ids(conn, name, run_id):
+                    for gid, last_seen in db.unseen_ids(conn, name, run_id):
                         row = conn.execute("SELECT json FROM listings WHERE id = ?", (gid,)).fetchone()
                         if row:
                             gl = Listing.model_validate_json(row[0])
-                            gl.gone = True
+                            gl.gone = db.is_gone(conn, name, last_seen)
                             gone.append(gl)
                     # Score this source's listings and push them to the UI right
                     # away, so fast sources (Wesbrook ~7s) appear without waiting
@@ -339,10 +344,14 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         # before the final "complete" event.
         try:
             self._emit(type="stage", text="Scoring & ranking…")
-            scraped = set(sources)  # only sources we ran can have 'gone' listings
+            # GONE means: this listing's source has COMPLETED several runs
+            # (GONE_AFTER_MISSES) since it last saw the listing. Completed runs
+            # are logged in run_log via db.record_run above, so a source that
+            # timed out/errored is never counted, and a single capped/partial
+            # fetch that misses a still-live listing doesn't delist it.
             listings = []
             for l, last_seen in db.all_listings(conn):
-                l.gone = l.source in scraped and last_seen != run_id
+                l.gone = db.is_gone(conn, l.source, last_seen)
                 l.is_new = db.is_new_since_last_run(conn, l.id, run_id)
                 listings.append(l)
             score_all(listings, criteria)

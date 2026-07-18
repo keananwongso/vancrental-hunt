@@ -29,7 +29,18 @@ CREATE TABLE IF NOT EXISTS geocode_cache (
     lng REAL,
     failed INTEGER NOT NULL DEFAULT 0
 );
+-- One row per (source, run) that COMPLETED successfully. Used to decide GONE:
+-- a listing is delisted only after its source has completed several runs
+-- without re-seeing it, so a capped/partial fetch doesn't falsely delist.
+CREATE TABLE IF NOT EXISTS run_log (
+    source TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    PRIMARY KEY (source, run_id)
+);
 """
+
+# How many completed runs a source must miss a listing before it's GONE.
+GONE_AFTER_MISSES = 3
 
 
 def connect() -> sqlite3.Connection:
@@ -59,12 +70,34 @@ def is_new_since_last_run(conn: sqlite3.Connection, listing_id: str, this_run: s
     return bool(row) and row[0] == this_run
 
 
-def gone_ids(conn: sqlite3.Connection, source: str, this_run: str) -> list[str]:
-    """IDs from `source` that were NOT seen in the current run (i.e. delisted)."""
+def unseen_ids(conn: sqlite3.Connection, source: str, this_run: str) -> list[tuple[str, str]]:
+    """(id, last_seen) for listings from `source` NOT seen in the current run.
+    Whether each is actually GONE depends on is_gone() (the miss threshold)."""
     rows = conn.execute(
-        "SELECT id FROM listings WHERE source = ? AND last_seen != ?", (source, this_run)
+        "SELECT id, last_seen FROM listings WHERE source = ? AND last_seen != ?",
+        (source, this_run),
     ).fetchall()
-    return [r[0] for r in rows]
+    return [(r[0], r[1]) for r in rows]
+
+
+def record_run(conn: sqlite3.Connection, source: str, run_id: str) -> None:
+    """Log that `source` completed successfully in run `run_id`. Only completed
+    runs count toward the GONE threshold — a timed-out/errored source is never
+    recorded, so it can never delist its listings."""
+    conn.execute(
+        "INSERT OR IGNORE INTO run_log (source, run_id) VALUES (?, ?)", (source, run_id)
+    )
+
+
+def is_gone(conn: sqlite3.Connection, source: str, last_seen: str) -> bool:
+    """True if `source` has COMPLETED at least GONE_AFTER_MISSES runs strictly
+    after this listing's last_seen — i.e. it's been missed enough consecutive
+    completed runs to count as delisted. run_id is an ISO timestamp, so string
+    comparison is chronological."""
+    (misses,) = conn.execute(
+        "SELECT COUNT(*) FROM run_log WHERE source = ? AND run_id > ?", (source, last_seen)
+    ).fetchone()
+    return misses >= GONE_AFTER_MISSES
 
 
 def update_json(conn: sqlite3.Connection, listing: Listing) -> None:

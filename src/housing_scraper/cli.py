@@ -62,7 +62,13 @@ def main() -> None:
     for name in names:
         source = available[name]
         print(f"{name}: fetching…")
-        raws = source.fetch(criteria)
+        try:
+            raws = source.fetch(criteria)
+        except Exception as e:
+            # A failed fetch tells us nothing about what's still live, so this
+            # source must NOT delist anything — skip logging its run below.
+            print(f"  {name}: fetch failed: {e}")
+            continue
         print(f"{name}: {len(raws)} listings")
         for raw in raws:
             try:
@@ -72,12 +78,16 @@ def main() -> None:
                 continue
             if db.upsert(conn, listing, run_id):
                 new_ids.add(listing.id)
+        # Log this completed run so it counts toward the GONE miss-threshold.
+        db.record_run(conn, name, run_id)
         conn.commit()
 
-    scraped = set(names)  # only mark 'gone' for sources we actually ran this time
+    # GONE only after a source has completed GONE_AFTER_MISSES runs without
+    # re-seeing the listing — see db.is_gone. Sources that failed above never
+    # logged a run, so they can't delist anything.
     listings = []
     for l, last_seen in db.all_listings(conn):
-        l.gone = l.source in scraped and last_seen != run_id
+        l.gone = db.is_gone(conn, l.source, last_seen)
         l.is_new = l.id in new_ids
         listings.append(l)
     score_all(listings, criteria)

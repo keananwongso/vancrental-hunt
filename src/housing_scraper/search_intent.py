@@ -25,8 +25,8 @@ Return ONLY JSON:
     "baths": number or null,
     "max_price": number or null,        // CAD/month
     "min_price": number or null,        // optional; default null
-    "move_in_date": "YYYY-MM-DD" or null,   // their target move-in
-    "move_in_flex_days": number or null,    // +/- days of flexibility, default 14 if a date is given
+    "move_in_date": "YYYY-MM-DD" or null,   // their PREFERRED move-in
+    "move_in_flex_days": number or null,    // +/- days of acceptable flexibility around the target (see rules)
     "areas": [string, ...],             // neighborhoods/areas mentioned, best-first; [] if none
     "center_address": string or null    // a specific address/landmark to measure distance from, if stated
   },
@@ -40,7 +40,12 @@ Rules:
 - Essentials are: beds, max_price, move_in_date. If any is missing/unclear, add ONE question for it. Ask nothing about non-essentials.
 - If they clearly imply a value (e.g. "for two people" -> beds likely 2), fill it and don't ask.
 - Never invent a budget or date. If not stated, leave null and ask.
-- areas: extract place names as written (e.g. "UBC", "Kitsilano", "near Wesbrook")."""
+- areas: extract place names as written (e.g. "UBC", "Kitsilano", "near Wesbrook").
+- move_in_flex_days: set move_in_date to their PREFERRED date, then size the flex window to cover EVERY month they say they'd accept:
+  - a single firm date/month -> 14
+  - "September, but August works too" (or any adjacent month named as also acceptable) -> ~45, so the window reaches back into that month
+  - "flexible" / "anytime" / "no rush" -> 60
+  Always widen the window enough that all months they mention fall inside target ± flex."""
 
 
 def _client() -> OpenAI:

@@ -625,6 +625,21 @@
 </div>
 
 <script>
+// Surface any uncaught JS error on-screen so failures are never silent.
+window.addEventListener('error', e => {
+  const bar = document.getElementById('jsErrBar') || (() => {
+    const d = document.createElement('div'); d.id = 'jsErrBar';
+    d.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:999;background:#7f1d1d;color:#fff;font:12px monospace;padding:8px 12px;';
+    document.body.appendChild(d); return d;
+  })();
+  bar.textContent = 'JS error: ' + (e.message || e.error) + '  @ ' + (e.filename||'').split('/').pop() + ':' + e.lineno;
+});
+window.addEventListener('unhandledrejection', e => {
+  const bar = document.getElementById('jsErrBar') || document.body.appendChild(Object.assign(document.createElement('div'),{id:'jsErrBar'}));
+  bar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:999;background:#7f1d1d;color:#fff;font:12px monospace;padding:8px 12px;';
+  bar.textContent = 'Promise error: ' + (e.reason && e.reason.message || e.reason);
+});
+
 const CURRENCY = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 const money = n => CURRENCY.format(n);
 const bn = n => (n === null || n === undefined) ? '—' : (Number.isInteger(n) ? n : n.toFixed(1));
@@ -824,18 +839,16 @@ function wireLanding() {
       });
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || ('server ' + res.status));
-      // Criteria saved. Enter the dashboard and reload the latest snapshot so
-      // the header/filters reflect the new search. This is the success path —
-      // do NOT let a reload hiccup keep us on the search screen.
-      showDashboard();
+      // Criteria saved. Reload the snapshot (best-effort), then enter the
+      // dashboard LAST so no downstream error can strand us on the search page.
       try {
         const fresh = await fetch('listings.json?t=' + Date.now()).then(r => r.ok ? r.json() : null);
-        if (fresh) {
+        if (fresh && fresh.listings) {
           state.data = fresh; state.crit = fresh.criteria;
-          buildSources(); recomputeDistances();
+          buildSources(); recomputeDistances(); render();
         }
-      } catch (_) { /* no snapshot yet — dashboard shows empty state + Scrape now */ }
-      render();
+      } catch (err) { console.error('post-apply reload failed (non-fatal):', err); }
+      showDashboard();   // always switch views, even if the reload above threw
       return;
     } catch (e) {
       if (errEl) { errEl.hidden = false; errEl.textContent = 'Could not apply search: ' + e.message + ' — is the server running (uv run housing-scraper serve)?'; }
